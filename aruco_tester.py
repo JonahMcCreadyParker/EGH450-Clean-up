@@ -2,19 +2,57 @@ import time
 import cv2
 import numpy as np
 
-MARKER_LENGTH_M = 0.20
-ARUCO_DICT = cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_5X5_100)
+# Most of this is used for the localizzation part, not needed yet
+MARKER_LENGTH_M = 0.20 # M is for meters
+ARUCO_DICTIONARY = cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_5X5_1000)
 ARUCO_PARAMS = cv2.aruco.DetectorParameters()
-ARUCO_DETECTOR = cv2.aruco.ArucoDetector(ARUCO_DICT, ARUCO_PARAMS)
+ARUCO_DETECTOR = cv2.aruco.ArucoDetector(ARUCO_DICTIONARY, ARUCO_PARAMS)
 
-def main():
+def webcam_aruco():
     cap = cv2.VideoCapture(0) # Cap is the video capture object, 0 is usually the default camera (so webcam)
     # Check if the camera opened successfully
     if not cap.isOpened():
-        raise RuntimeError("Could not open video device")
+        raise RuntimeError(f"Could not open video device {cap}")
     
     # Now we can read frames from the camera in a loop
     while True:
-        check, frame = cap.read() # Read a frame from the camera, check is just a ture or false if any frame was read
+        # CAMERA FRAME READING AND MARKER DETECTION
+        check, frame = cap.read() # Reads a frame from the camera, check is just a ture or false if any frame was read
+        if not check:
+            print("Failed to capture frame")
+            break
+        corners, ids, rejected = ARUCO_DETECTOR.detectMarkers(frame) # Detect markers in the frame , um rejected is just the corners that were rejected as markers (shrugging)
+        # Note: OpenCV automatically works on gray scale for marker detection, so we don't need to convert the frame to grayscale before detection. But would be faster too I believe
+
+        # ANNOTATION OF FRAME
+        if ids is not None and len(ids) > 0: #     
+            # Draw boxes around markers (Green is good)
+            cv2.aruco.drawDetectedMarkers(frame, corners, ids)
+
+            # Make a list of seen ID's useful for localization
+            id_list = [int(x[0]) for x in ids]
+            id_log = "Found IDs: " + ", ".join(map(str, id_list))
+
+            # Add an ID indicator on screen
+            cv2.putText(frame, id_log, (10, 35), cv2.FONT_HERSHEY_SIMPLEX, 1.0, (0, 0, 255), 2) #Use color blue
+
+            # Show the list of ID's in the terminal (updates very time an ID is detected)
+            print(id_log) 
+
+        else:
+            # In case theres like a really distant marker, best to add something to say that
+            cv2.putText(frame, "No markers detected", (10, 35), cv2.FONT_HERSHEY_SIMPLEX, 1.0, (225, 0, 0), 2) #Use color blue
+
+        # VIDEO DISPLAY
+        cv2.imshow("Aruco Marker Detection", frame) # Show the frame with the detected markers and ID's
+
+        # Safe exit
+        key = cv2.waitKey(1) & 0xFF # waits 1 millisecond
+        if key == ord('q'):
+            break # Exit the loop if 'q' is pressed, or ctrl+c in the terminal
+
+    cap.release() # Release the video capture object when done
+    cv2.destroyAllWindows() # Close all OpenCV windows
+
 if __name__ == "__main__":
-    main()   
+    webcam_aruco()   
