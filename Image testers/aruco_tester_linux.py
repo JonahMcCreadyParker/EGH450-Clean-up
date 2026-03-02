@@ -7,13 +7,15 @@ Refer to me if ya have questions - Taj
 """
 import time
 import cv2
+print(cv2.__version__)
+print(dir(cv2.aruco))
 import numpy as np
 
 # Most of this is used for the localization part, not needed yet
 MARKER_LENGTH_M = 0.20 # M is for meters
 ARUCO_DICTIONARY = cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_5X5_1000)
-ARUCO_PARAMS = cv2.aruco.DetectorParameters()
-ARUCO_DETECTOR = cv2.aruco.ArucoDetector(ARUCO_DICTIONARY, ARUCO_PARAMS)
+ARUCO_PARAMS = cv2.aruco.DetectorParameters_create()
+#ARUCO_DETECTOR = cv2.aruco.ArucoDetector(ARUCO_DICTIONARY, ARUCO_PARAMS)
 
 print("Lets Go Ahead...")
 
@@ -33,7 +35,7 @@ def webcam_aruco():
             break
 
         frame_g = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY) # Convert the frame to grayscale for marker detection
-        corners, ids, rejected = ARUCO_DETECTOR.detectMarkers(frame_g) # Detect markers in the frame , um rejected is just the corners that were rejected as markers (shrugging)
+        corners, ids, rejected = cv2.aruco.detectMarkers(frame_g, ARUCO_DICTIONARY,parameters=ARUCO_PARAMS) # Detect markers in the frame , um rejected is just the corners that were rejected as markers (shrugging)
         # Note: OpenCV automatically works on gray scale for marker detection, so we don't need to convert the frame to grayscale before detection. But would be faster too I believe
 
         ### ANNOTATION OF FRAME
