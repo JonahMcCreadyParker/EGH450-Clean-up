@@ -7,13 +7,11 @@ Refer to me if ya have questions - Taj
 """
 import time
 import cv2
-print(cv2.__version__)
-print(dir(cv2.aruco))
 import numpy as np
 
 # Most of this is used for the localization part, not needed yet
 MARKER_LENGTH_M = 0.20 # M is for meters
-ARUCO_DICTIONARY = cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_5X5_1000)
+ARUCO_DICTIONARY = cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_5X5_100)
 ARUCO_PARAMS = cv2.aruco.DetectorParameters()
 ARUCO_DETECTOR = cv2.aruco.ArucoDetector(ARUCO_DICTIONARY, ARUCO_PARAMS)
 
