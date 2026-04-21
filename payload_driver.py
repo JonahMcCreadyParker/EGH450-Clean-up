@@ -1,33 +1,34 @@
-#!/usr/bin/env python3
-import rospy
-from std_msgs.msg import Bool
-from gpiozero import AngularServo
+#Python - PWM control (GPIO output, #the motor name)
 
-servo = AngularServo(
-    13,
-    min_angle=-90,
-    max_angle=90,
-    min_pulse_width=0.0005,
-    max_pulse_width=0.0025
-)
+#M1 --> GPIO13 
+#M2 --> GPIO12
 
-def callback(msg):
-    if msg.data:
-        rospy.loginfo("Servo to 90°")
-        servo.angle = 90
-    else:
-        rospy.loginfo("Servo to -90°")
-        servo.angle = -90
+import RPi.GPIO as GPIO
+# pin numbering 
+GPIO.setmode(GPIO.BCM)
+mode = GPIO.getmode()
+#print(mode) # successfully set BCM 
 
-def shutdown():
-    servo.detach()
+GPIO.setwarnings(False) #disable warnings 
 
-if __name__ == '__main__':
-    rospy.init_node('servo_controller')
+# set up output channels (required for PWM)
+chan_list = [12,13]
 
-    sub = rospy.Subscriber('/actuator_control/actuator_a', Bool, callback)
+# setting the output state 
+GPIO.setup(chan_list, GPIO.OUT, initial=GPIO.LOW)
 
-    rospy.on_shutdown(shutdown)
+#create a PWM instance: 
+M1 = GPIO.PWM(13, 50)
+M2 = GPIO.PWM(12, 50)
 
-    rospy.spin()
+# # to start 
+# M1.start(1)   # where dc is the duty cycle (0.0 <= dc <= 100.0)
+# input('Press return to stop:')   # use raw_input for Python 2
+# M1.stop()
+# GPIO.cleanup()
 
+# # to start 
+# M2.start(1)   # where dc is the duty cycle (0.0 <= dc <= 100.0)
+# input('Press return to stop:')   # use raw_input for Python 2
+# M2.stop()
+# GPIO.cleanup()
