@@ -1,0 +1,10 @@
+<launch>
+  <node pkg="egh450_target_solvepnp"
+        type="pose_estimator"
+        name="egh450_target_solvepnp"
+        output="screen">
+    <param name="use_compressed" value="true" />
+    <remap from="camera_info" to="/depthai_node/camera/camera_info" />
+    <remap from="image_raw/compressed" to="/depthai_node/image/compressed" />
+  </node>
+</launch>
