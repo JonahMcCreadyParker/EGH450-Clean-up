@@ -564,6 +564,15 @@ diagnostic_updater_DIR:PATH=/opt/ros/noetic/share/diagnostic_updater/cmake
 dynamic_reconfigure_DIR:PATH=/opt/ros/noetic/share/dynamic_reconfigure/cmake
 
 //Value Computed by CMake
+egb349_group8_vision_BINARY_DIR:STATIC=/home/uavteam6/EGB349_Project_eldrone/catkin_ws_G6/build/egb349_group8_vision
+
+//Value Computed by CMake
+egb349_group8_vision_IS_TOP_LEVEL:STATIC=OFF
+
+//Value Computed by CMake
+egb349_group8_vision_SOURCE_DIR:STATIC=/home/uavteam6/EGB349_Project_eldrone/catkin_ws_G6/src/egb349_group8_vision
+
+//Value Computed by CMake
 egh450_image_processor_BINARY_DIR:STATIC=/home/uavteam6/EGB349_Project_eldrone/catkin_ws_G6/build/egh450_image_processor
 
 //Value Computed by CMake
@@ -1023,7 +1032,7 @@ CMAKE_MODULE_LINKER_FLAGS_RELWITHDEBINFO-ADVANCED:INTERNAL=1
 //ADVANCED property for variable: CMAKE_NM
 CMAKE_NM-ADVANCED:INTERNAL=1
 //number of local generators
-CMAKE_NUMBER_OF_MAKEFILES:INTERNAL=23
+CMAKE_NUMBER_OF_MAKEFILES:INTERNAL=24
 //ADVANCED property for variable: CMAKE_OBJCOPY
 CMAKE_OBJCOPY-ADVANCED:INTERNAL=1
 //ADVANCED property for variable: CMAKE_OBJDUMP

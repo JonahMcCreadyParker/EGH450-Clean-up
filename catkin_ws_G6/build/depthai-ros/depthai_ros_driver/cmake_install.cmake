@@ -147,15 +147,15 @@ if(CMAKE_INSTALL_COMPONENT STREQUAL "Unspecified" OR NOT CMAKE_INSTALL_COMPONENT
      NOT IS_SYMLINK "$ENV{DESTDIR}${CMAKE_INSTALL_PREFIX}/lib/libdepthai_ros_driver_common.so")
     file(RPATH_CHECK
          FILE "$ENV{DESTDIR}${CMAKE_INSTALL_PREFIX}/lib/libdepthai_ros_driver_common.so"
-         RPATH "/home/uavteam6/EGB349_Project_eldrone/catkin_ws_G6/devel/lib:/opt/ros/noetic/lib:/opt/ros/noetic/lib/aarch64-linux-gnu")
+         RPATH "/opt/ros/noetic/lib:/home/uavteam6/EGB349_Project_eldrone/catkin_ws_G6/devel/lib:/opt/ros/noetic/lib/aarch64-linux-gnu")
   endif()
   file(INSTALL DESTINATION "${CMAKE_INSTALL_PREFIX}/lib" TYPE SHARED_LIBRARY FILES "/home/uavteam6/EGB349_Project_eldrone/catkin_ws_G6/devel/lib/libdepthai_ros_driver_common.so")
   if(EXISTS "$ENV{DESTDIR}${CMAKE_INSTALL_PREFIX}/lib/libdepthai_ros_driver_common.so" AND
      NOT IS_SYMLINK "$ENV{DESTDIR}${CMAKE_INSTALL_PREFIX}/lib/libdepthai_ros_driver_common.so")
     file(RPATH_CHANGE
          FILE "$ENV{DESTDIR}${CMAKE_INSTALL_PREFIX}/lib/libdepthai_ros_driver_common.so"
-         OLD_RPATH "/home/uavteam6/EGB349_Project_eldrone/catkin_ws_G6/devel/lib:/opt/ros/noetic/lib:/opt/ros/noetic/lib/aarch64-linux-gnu:"
-         NEW_RPATH "/home/uavteam6/EGB349_Project_eldrone/catkin_ws_G6/devel/lib:/opt/ros/noetic/lib:/opt/ros/noetic/lib/aarch64-linux-gnu")
+         OLD_RPATH "/opt/ros/noetic/lib:/home/uavteam6/EGB349_Project_eldrone/catkin_ws_G6/devel/lib:/opt/ros/noetic/lib/aarch64-linux-gnu:"
+         NEW_RPATH "/opt/ros/noetic/lib:/home/uavteam6/EGB349_Project_eldrone/catkin_ws_G6/devel/lib:/opt/ros/noetic/lib/aarch64-linux-gnu")
     if(CMAKE_INSTALL_DO_STRIP)
       execute_process(COMMAND "/usr/bin/strip" "$ENV{DESTDIR}${CMAKE_INSTALL_PREFIX}/lib/libdepthai_ros_driver_common.so")
     endif()

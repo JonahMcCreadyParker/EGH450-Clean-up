@@ -1,0 +1,7 @@
+set(egb349_group8_vision_SETUP_PY_SETUP_MODULE "distutils.core")
+set(egb349_group8_vision_SETUP_PY_VERSION "0.0.0")
+set(egb349_group8_vision_SETUP_PY_SCRIPTS "")
+set(egb349_group8_vision_SETUP_PY_PACKAGES "egb349_group8_vision")
+set(egb349_group8_vision_SETUP_PY_PACKAGE_DIRS "src/egb349_group8_vision")
+set(egb349_group8_vision_SETUP_PY_MODULES "")
+set(egb349_group8_vision_SETUP_PY_MODULE_DIRS "")

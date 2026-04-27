@@ -74,6 +74,7 @@ all: rqt_quaternion_view/all
 all: breadcrumb/all
 all: depthai_publisher/all
 all: qutas_lab_450/all
+all: egb349_group8_vision/all
 all: spar/spar_msgs/all
 all: spar/spar_node/all
 all: uavasr_emulator/all
@@ -97,6 +98,7 @@ codegen: rqt_quaternion_view/codegen
 codegen: breadcrumb/codegen
 codegen: depthai_publisher/codegen
 codegen: qutas_lab_450/codegen
+codegen: egb349_group8_vision/codegen
 codegen: spar/spar_msgs/codegen
 codegen: spar/spar_node/codegen
 codegen: uavasr_emulator/codegen
@@ -120,6 +122,7 @@ preinstall: rqt_quaternion_view/preinstall
 preinstall: breadcrumb/preinstall
 preinstall: depthai_publisher/preinstall
 preinstall: qutas_lab_450/preinstall
+preinstall: egb349_group8_vision/preinstall
 preinstall: spar/spar_msgs/preinstall
 preinstall: spar/spar_node/preinstall
 preinstall: uavasr_emulator/preinstall
@@ -148,6 +151,7 @@ clean: rqt_quaternion_view/clean
 clean: breadcrumb/clean
 clean: depthai_publisher/clean
 clean: qutas_lab_450/clean
+clean: egb349_group8_vision/clean
 clean: spar/spar_msgs/clean
 clean: spar/spar_node/clean
 clean: uavasr_emulator/clean
@@ -450,6 +454,25 @@ depthai_publisher/preinstall:
 # Recursive "clean" directory target.
 depthai_publisher/clean:
 .PHONY : depthai_publisher/clean
+
+#=============================================================================
+# Directory level rules for directory egb349_group8_vision
+
+# Recursive "all" directory target.
+egb349_group8_vision/all:
+.PHONY : egb349_group8_vision/all
+
+# Recursive "codegen" directory target.
+egb349_group8_vision/codegen:
+.PHONY : egb349_group8_vision/codegen
+
+# Recursive "preinstall" directory target.
+egb349_group8_vision/preinstall:
+.PHONY : egb349_group8_vision/preinstall
+
+# Recursive "clean" directory target.
+egb349_group8_vision/clean:
+.PHONY : egb349_group8_vision/clean
 
 #=============================================================================
 # Directory level rules for directory egh450_image_processor

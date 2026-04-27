@@ -67,7 +67,7 @@ include depthai-ros/depthai_ros_msgs/CMakeFiles/_depthai_ros_msgs_generate_messa
 include depthai-ros/depthai_ros_msgs/CMakeFiles/_depthai_ros_msgs_generate_messages_check_deps_SpatialDetectionArray.dir/progress.make
 
 depthai-ros/depthai_ros_msgs/CMakeFiles/_depthai_ros_msgs_generate_messages_check_deps_SpatialDetectionArray:
-	cd /home/uavteam6/EGB349_Project_eldrone/catkin_ws_G6/build/depthai-ros/depthai_ros_msgs && ../../catkin_generated/env_cached.sh /usr/bin/python3 /opt/ros/noetic/share/genmsg/cmake/../../../lib/genmsg/genmsg_check_deps.py depthai_ros_msgs /home/uavteam6/EGB349_Project_eldrone/catkin_ws_G6/src/depthai-ros/depthai_ros_msgs/msg/SpatialDetectionArray.msg geometry_msgs/Pose2D:vision_msgs/ObjectHypothesis:depthai_ros_msgs/SpatialDetection:geometry_msgs/Point:std_msgs/Header:vision_msgs/BoundingBox2D
+	cd /home/uavteam6/EGB349_Project_eldrone/catkin_ws_G6/build/depthai-ros/depthai_ros_msgs && ../../catkin_generated/env_cached.sh /usr/bin/python3 /opt/ros/noetic/share/genmsg/cmake/../../../lib/genmsg/genmsg_check_deps.py depthai_ros_msgs /home/uavteam6/EGB349_Project_eldrone/catkin_ws_G6/src/depthai-ros/depthai_ros_msgs/msg/SpatialDetectionArray.msg vision_msgs/BoundingBox2D:geometry_msgs/Pose2D:geometry_msgs/Point:vision_msgs/ObjectHypothesis:std_msgs/Header:depthai_ros_msgs/SpatialDetection
 
 depthai-ros/depthai_ros_msgs/CMakeFiles/_depthai_ros_msgs_generate_messages_check_deps_SpatialDetectionArray.dir/codegen:
 .PHONY : depthai-ros/depthai_ros_msgs/CMakeFiles/_depthai_ros_msgs_generate_messages_check_deps_SpatialDetectionArray.dir/codegen

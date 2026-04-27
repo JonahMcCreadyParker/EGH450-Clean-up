@@ -197,6 +197,13 @@
 /home/uavteam6/EGB349_Project_eldrone/catkin_ws_G6/build/qutas_lab_450/CMakeFiles/install.dir
 /home/uavteam6/EGB349_Project_eldrone/catkin_ws_G6/build/qutas_lab_450/CMakeFiles/install/local.dir
 /home/uavteam6/EGB349_Project_eldrone/catkin_ws_G6/build/qutas_lab_450/CMakeFiles/install/strip.dir
+/home/uavteam6/EGB349_Project_eldrone/catkin_ws_G6/build/egb349_group8_vision/CMakeFiles/test.dir
+/home/uavteam6/EGB349_Project_eldrone/catkin_ws_G6/build/egb349_group8_vision/CMakeFiles/edit_cache.dir
+/home/uavteam6/EGB349_Project_eldrone/catkin_ws_G6/build/egb349_group8_vision/CMakeFiles/rebuild_cache.dir
+/home/uavteam6/EGB349_Project_eldrone/catkin_ws_G6/build/egb349_group8_vision/CMakeFiles/list_install_components.dir
+/home/uavteam6/EGB349_Project_eldrone/catkin_ws_G6/build/egb349_group8_vision/CMakeFiles/install.dir
+/home/uavteam6/EGB349_Project_eldrone/catkin_ws_G6/build/egb349_group8_vision/CMakeFiles/install/local.dir
+/home/uavteam6/EGB349_Project_eldrone/catkin_ws_G6/build/egb349_group8_vision/CMakeFiles/install/strip.dir
 /home/uavteam6/EGB349_Project_eldrone/catkin_ws_G6/build/spar/spar_msgs/CMakeFiles/spar_msgs_generate_messages.dir
 /home/uavteam6/EGB349_Project_eldrone/catkin_ws_G6/build/spar/spar_msgs/CMakeFiles/_spar_msgs_generate_messages_check_deps_FlightMotionAction.dir
 /home/uavteam6/EGB349_Project_eldrone/catkin_ws_G6/build/spar/spar_msgs/CMakeFiles/_spar_msgs_generate_messages_check_deps_FlightMotionActionGoal.dir
