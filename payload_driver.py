@@ -1,44 +1,56 @@
-# # #Python - PWM control (GPIO output, #the motor name)
+#Python - PWM control (GPIO output, #the motor name)
 
-# #M1 --> GPIO13 
-# #M2 --> GPIO12
+#M1 --> GPIO13 
+#M2 --> GPIO12
 
-# import RPi.GPIO as GPIO
-# # pin numbering 
-# GPIO.setmode(GPIO.BCM)
-# mode = GPIO.getmode()
-# #print(mode) # successfully set BCM 
+import RPi.GPIO as GPIO # importing the file
+import time 
 
-# GPIO.setwarnings(False) #disable warnings 
+# pin numbering 
+GPIO.setmode(GPIO.BCM)
+mode = GPIO.getmode() # To detect which pin numbering system has been set (for example, by another Python module):
 
-# # set up output channels (required for PWM)
-# chan_list = [12,13]
+# print(mode) # successfully set BCM 
 
-# # setting the output state 
-# GPIO.setup(chan_list, GPIO.OUT, initial=GPIO.LOW)
+GPIO.setwarnings(False) #disable warnings 
 
-# #create a PWM instance: 
-# M1 = GPIO.PWM(13, 50)
-# M2 = GPIO.PWM(12, 50)
+# set up output channels (required for PWM)
+chan_list = [12,13]
 
-# # to start 
-# M1.start(1)   # where dc is the duty cycle (0.0 <= dc <= 100.0)
-# input('Press return to stop:')   # use raw_input for Python 2
-# M1.stop()
-# GPIO.cleanup()
+# # tests the channels to make sure they are connected/reading 
+# if GPIO.input(12):
+#     print('Input 12 was HIGH') 
+# else:
+#     print('Input 12 was LOW') # bad not connecting 
 
+# if GPIO.input(13):
+#     print('Input 13 was HIGH')
+# else:
+#     print('Input 13 was LOW')
 
-from gpiozero import AngularServo
-from time import sleep
+# setting the output state 
+GPIO.setup(chan_list, GPIO.OUT, initial=GPIO.LOW)
 
-servo = AngularServo(13, min_pulse_width=0.001, max_pulse_width=0.002)
-i = 0
-while (i <= 1):
-    servo.angle = 0
-    sleep(2)
-    servo.angle = 1
-    sleep(2)
-    servo.angle = -1
-    sleep(2)
-    print("complete")
-    i+=1
+#create a PWM instance: 
+M1 = GPIO.PWM(13, 50) # 50Hz 
+M2 = GPIO.PWM(12, 50)
+
+# at 50hz the period is 1/50 = 20ms 
+# duty cycle is pulse width / period * 100
+# from measured 0.5ms = 90 degrees, 2.5ms = 180 degrees, therefore 
+# 2.5/20 * 100 = 12.5 % 
+
+# to start - we want it to start at 0 
+M1.start(2.5) # safe neutral-ish starting point
+time.sleep(0.5)
+M1.ChangeDutyCycle(12.5)
+time.sleep(1.5) # gives it time to action the above command 
+M1.stop()
+
+# to start - we want it to start at 0 
+M2.start(2.5) # safe neutral-ish starting point
+time.sleep(0.5)
+M2.ChangeDutyCycle(12.5)
+time.sleep(1.5) # gives it time to action the above command 
+M2.stop()
+GPIO.cleanup()

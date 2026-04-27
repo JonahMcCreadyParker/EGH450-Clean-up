@@ -1,0 +1,22 @@
+map:
+  width: 80
+  height: 80
+  resolution: 0.1
+  boarder: true
+
+obstacles:
+  #rand:
+  #  size: 3
+  #  divisor: 6
+  obs_0:
+    type: "square"
+    size: 3
+    position:
+      x: 50
+      y: 20
+  obs_1:
+    type: "circle"
+    size: 5
+    position:
+      x: 10
+      y: 45
