@@ -1,56 +1,81 @@
-#Python - PWM control (GPIO output, #the motor name)
+#keyboard input
+from gpiozero import AngularServo
+from time import sleep
 
-#M1 --> GPIO13 
-#M2 --> GPIO12
+# Two servos
+M1 = AngularServo(12, min_pulse_width=0.0005, max_pulse_width=0.0025)
+M2 = AngularServo(13, min_pulse_width=0.0005, max_pulse_width=0.0025)
 
-import RPi.GPIO as GPIO # importing the file
-import time 
+negative_angle = 70
+positive_angle = -40
 
-# pin numbering 
-GPIO.setmode(GPIO.BCM)
-mode = GPIO.getmode() # To detect which pin numbering system has been set (for example, by another Python module):
+# Neutral position
+M1.angle = negative_angle
+M2.angle = negative_angle
+sleep(1)
 
-# print(mode) # successfully set BCM 
+def deploy_M1():
+    print("Deploying M1...")
+    M1.angle = positive_angle
+    sleep(1)
 
-GPIO.setwarnings(False) #disable warnings 
+def deploy_M2():
+    print("Deploying M2...")
+    M2.angle = positive_angle
+    sleep(1)
 
-# set up output channels (required for PWM)
-chan_list = [12,13]
+def neutral():
+    print("Returning to neutral...")
+    M1.angle = negative_angle
+    M2.angle = negative_angle
+    sleep(1)
 
-# # tests the channels to make sure they are connected/reading 
-# if GPIO.input(12):
-#     print('Input 12 was HIGH') 
-# else:
-#     print('Input 12 was LOW') # bad not connecting 
+try:
+    print("Servo controller ready.")
+    print("Press '1' + Enter to deploy M1")
+    print("Press '2' + Enter to deploy M2")
+    print("Press 'n' + Enter to return to neutral")
+    print("Press 'q' + Enter to quit")
 
-# if GPIO.input(13):
-#     print('Input 13 was HIGH')
-# else:
-#     print('Input 13 was LOW')
+    while True:
+        user_input = input("> ").strip().lower()
 
-# setting the output state 
-GPIO.setup(chan_list, GPIO.OUT, initial=GPIO.LOW)
+        if user_input == '1':
+            deploy_M1()
+        elif user_input == '2':
+            deploy_M2()
+        elif user_input == 'n':
+            neutral()
+        elif user_input == 'q':
+            print("Quitting...")
+            break
+        else:
+            print("Unknown input. Use '1', '2', 'n', or 'q'.")
 
-#create a PWM instance: 
-M1 = GPIO.PWM(13, 50) # 50Hz 
-M2 = GPIO.PWM(12, 50)
+finally:
+    print("Stopping servo signals")
+    M1.detach()
+    M2.detach()
 
-# at 50hz the period is 1/50 = 20ms 
-# duty cycle is pulse width / period * 100
-# from measured 0.5ms = 90 degrees, 2.5ms = 180 degrees, therefore 
-# 2.5/20 * 100 = 12.5 % 
+# from gpiozero import AngularServo
+# from time import sleep
 
-# to start - we want it to start at 0 
-M1.start(2.5) # safe neutral-ish starting point
-time.sleep(0.5)
-M1.ChangeDutyCycle(12.5)
-time.sleep(1.5) # gives it time to action the above command 
-M1.stop()
+# # Create two servos
+# M1 = AngularServo(13, min_pulse_width=0.0005, max_pulse_width=0.0025)
+# M2 = AngularServo(12, min_pulse_width=0.0005, max_pulse_width=0.0025)
 
-# to start - we want it to start at 0 
-M2.start(2.5) # safe neutral-ish starting point
-time.sleep(0.5)
-M2.ChangeDutyCycle(12.5)
-time.sleep(1.5) # gives it time to action the above command 
-M2.stop()
-GPIO.cleanup()
+# try:
+#     print("Both to -90°")
+#     M1.angle = -90
+#     M2.angle = -90
+#     sleep(1)
+
+#     print("Both to +90°")
+#     M1.angle = 90
+#     M2.angle = 90
+#     sleep(1)
+
+# finally:
+#     print("Stopping servo signal")
+#     M1.detach()
+#     M2.detach()

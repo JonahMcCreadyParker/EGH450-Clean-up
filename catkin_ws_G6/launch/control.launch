@@ -1,11 +1,11 @@
 <?xml version='1.0'?>
 <launch>
-	<arg name="uav_name" default="uavteam6" />
+	<arg name="uav_name" default="uavteam8" />
 
 	<!-- MAVROS Parameters -->
 	<arg name="fcu_url" default="/dev/ttyUSB0:921600" />
 	<arg name="gcs_url" default="" />
-	<arg name="tgt_system" default="6" />
+	<arg name="tgt_system" default="8" />
 	<arg name="tgt_component" default="1" />
 	<arg name="log_output" default="screen" />
 	<arg name="fcu_protocol" default="v2.0" />
