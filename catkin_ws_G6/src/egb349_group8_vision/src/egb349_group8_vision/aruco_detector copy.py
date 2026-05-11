@@ -6,8 +6,6 @@ import numpy as np
 
 # Very similar to the Aruco_subscriber.py file, but this has pose estimation and a different HUD, as well as integrated camera intrinsics.
 from sensor_msgs.msg import CompressedImage, CameraInfo
-from std_msgs.msg import String
-from visualization_msgs.msg import Marker
 from cv_bridge import CvBridge, CvBridgeError
 
 class ArucoDetector():
@@ -16,17 +14,14 @@ class ArucoDetector():
     FRAME_SUB_TOPIC = "/depthai_node/image/compressed"
     CAMERA_INFO_TOPIC = "/depthai_node/camera/camera_info"
     OUTPUT_TOPIC = "/processed_aruco/image/compressed"
-    POSE_LOG_TOPIC = "/aruco/pose_log"
-    RVIZ_LOG_TOPIC = "/aruco/detection_log_text"
 
     # ArUco setup
     ARUCO_DICT = cv2.aruco.DICT_5X5_100
-    MARKER_LENGTH = 0.200  # metres 
+    MARKER_LENGTH = 0.165  # metres 
 
     # HUD setup
     SHOW_HUD = False
-    SHOW_CROSSHAIR = True
-    SHOW_DISTANCE_TEXT = True
+    SHOW_DISTANCE_TEXT = False
     CROSSHAIR_SIZE = 18
     CROSSHAIR_GAP = 6
     HUD_BOX_WIDTH = 135
@@ -36,7 +31,6 @@ class ArucoDetector():
         # Camera calibration values are filled from the /camera_info topic
         self.camera_matrix = None
         self.dist_coeffs = None
-        self.detected_marker_log = {}
 
         self.br = CvBridge()
 
@@ -86,26 +80,10 @@ class ArucoDetector():
             self.img_callback
         )
 
-        #Text log output for detected marker poses
-        self.pose_log_pub = rospy.Publisher(
-            self.POSE_LOG_TOPIC,
-            String,
-            queue_size=10
-        )
-
-        # RViz text marker showing all markers seen so far
-        self.rviz_log_pub = rospy.Publisher(
-            self.RVIZ_LOG_TOPIC,
-            Marker,
-            queue_size=10
-        )
-
         # Log info
         rospy.loginfo("ArUco detector started")
         rospy.loginfo("Input image: {}".format(self.FRAME_SUB_TOPIC))
         rospy.loginfo("Output image: {}".format(self.OUTPUT_TOPIC))
-        rospy.loginfo("Pose log: {}".format(self.POSE_LOG_TOPIC))
-        rospy.loginfo("RViz detection log: {}".format(self.RVIZ_LOG_TOPIC))
 
     def camera_info_callback(self, msg):
         # Fills the camera calibartion values using the camera intrinsics for pose estimation
@@ -121,18 +99,6 @@ class ArucoDetector():
         except CvBridgeError as e:
             rospy.logerr(e) # Log the error
             return
-        
-        # height, width = frame.shape[:2]
-        # rospy.loginfo_throttle(
-        #     1.0,
-        #     "Frame size: {}x{}, camera cx={}, cy={}".format(
-        #         width,
-        #         height,
-        #         self.camera_matrix[0, 2] if self.camera_matrix is not None else None,
-        #         self.camera_matrix[1, 2] if self.camera_matrix is not None else None
-        #     )
-        # )
-
         # Run marker detection and pose estimation
         aruco = self.find_aruco(frame)
 
@@ -251,75 +217,10 @@ class ArucoDetector():
             1
         )
 
-    def update_detection_log(self, marker_id, cX, cY, x, y, z, distance):
-        # Save latest pose for each marker ID seen during this run
-        self.detected_marker_log[int(marker_id)] = {
-            "px": cX,
-            "py": cY,
-            "x": x,
-            "y": y,
-            "z": z,
-            "distance": distance,
-            "time": rospy.Time.now().to_sec()
-        }
-
-        log_lines = ["Seen ArUco markers:"]
-
-        for saved_id in sorted(self.detected_marker_log.keys()):
-            marker = self.detected_marker_log[saved_id]
-
-            log_lines.append(
-                "ID {}: pixel=({}, {}), x={:.2f}, y={:.2f}, z={:.2f}, dist={:.2f}m".format(
-                    saved_id,
-                    marker["px"],
-                    marker["py"],
-                    marker["x"],
-                    marker["y"],
-                    marker["z"],
-                    marker["distance"]
-                )
-            )
-
-        log_text = "\n".join(log_lines)
-
-        # Publish as normal ROS string topic
-        self.pose_log_pub.publish(log_text)
-
-        # Publish as RViz text marker
-        marker_msg = Marker()
-        marker_msg.header.frame_id = "map"
-        marker_msg.header.stamp = rospy.Time.now()
-        marker_msg.ns = "aruco_detection_log"
-        marker_msg.id = 0
-        marker_msg.type = Marker.TEXT_VIEW_FACING
-        marker_msg.action = Marker.ADD
-
-        # Position of the text in RViz
-        marker_msg.pose.position.x = 0.0
-        marker_msg.pose.position.y = -0.8
-        marker_msg.pose.position.z = 1.5
-
-        marker_msg.pose.orientation.x = 0.0
-        marker_msg.pose.orientation.y = 0.0
-        marker_msg.pose.orientation.z = 0.0
-        marker_msg.pose.orientation.w = 1.0
-
-        marker_msg.scale.z = 0.12
-
-        marker_msg.color.r = 0.0
-        marker_msg.color.g = 1.0
-        marker_msg.color.b = 0.0
-        marker_msg.color.a = 1.0
-
-        marker_msg.text = log_text
-
-        self.rviz_log_pub.publish(marker_msg)
     
-
-
     def find_aruco(self, frame):
         # Draw the centre HUD on every frame
-        if self.SHOW_CROSSHAIR:
+        if self.SHOW_HUD:
             self.draw_crosshair(frame)
 
         # Detect ArUco markers in the image and estimate their pose
@@ -342,11 +243,9 @@ class ArucoDetector():
                 parameters=self.aruco_params
             )
         
-        # If no markers are detected, end processing and next frame
         if ids is None or len(corners) == 0:
             return frame
         
-        # Flatten the ids array for easier processing and logging
         ids = ids.flatten()
 
         # 3D marker corner postions based on real marker size
@@ -383,24 +282,11 @@ class ArucoDetector():
             if self.camera_matrix is None or self.dist_coeffs is None:
                 rospy.logwarn_throttle(2.0, "Waiting for camera info...")
                 continue
-            
-            frame_h, frame_w = frame.shape[:2]
-
-            camera_matrix = self.camera_matrix.copy()
-
-            # Camera info appears to be for 640x480, while image stream is 416x416
-            scale_x = frame_w / 640.0
-            scale_y = frame_h / 480.0
-
-            camera_matrix[0, 0] *= scale_x  # fx
-            camera_matrix[1, 1] *= scale_y  # fy
-            camera_matrix[0, 2] *= scale_x  # cx
-            camera_matrix[1, 2] *= scale_y  # cy
-
+                
             success, rvec, tvec = cv2.solvePnP(
                 object_points,
                 pts,
-                camera_matrix,
+                self.camera_matrix,
                 self.dist_coeffs
             )
 
@@ -415,29 +301,17 @@ class ArucoDetector():
             if hasattr(cv2, "drawFrameAxes"):
                 cv2.drawFrameAxes(
                     frame,
-                    camera_matrix,
+                    self.camera_matrix,
                     self.dist_coeffs,
                     rvec,
                     tvec,
                     self.MARKER_LENGTH * 0.5
                 )
             
-            # Convert the translation vector to x, y, z coordinates in metres
-            raw_x = float(tvec[0])
-            raw_y = float(tvec[1])
-            raw_z = float(tvec[2])
+            x = float(tvec[0])
+            y = float(tvec[1])
+            z = float(tvec[2])
             distance  = float(np.linalg.norm(tvec))
-
-            # Display convention for targeting:
-            # x positive = marker right of camera centre
-            # y positive = marker above camera centre, y has to be flipped as image coordinates are inverted, fills from top left corner.
-            # z positive = should always be positive, otherwise the camera is behind the marker, so it cant see it.
-            x = raw_x
-            y = -raw_y
-            z = raw_z
-
-            # For logging detected marker poses
-            self.update_detection_log(marker_id, cX, cY, x, y, z, distance)
 
             # Small HUD box beside each detected marker
             if self.SHOW_HUD:
@@ -453,15 +327,24 @@ class ArucoDetector():
                             (0, 255, 255),
                             1
                 )
+            #pose text, very simle
+            cv2.putText(frame,
+                        "Dist: {:.2f} m".format(distance),
+                        (cX + 8, cY + 15),
+                        cv2.FONT_HERSHEY_SIMPLEX,
+                        0.45,
+                        (0,255,255),
+                        1
+            )
 
-                cv2.putText(frame,
-                            "x:{:.2f} y:{:.2f} z:{:.2f}".format(x, y, z),
-                            (cX + 8, cY + 32),
-                            cv2.FONT_HERSHEY_SIMPLEX,
-                            0.40,
-                            (0,255,255),
-                            1
-                )
+            cv2.putText(frame,
+                        "x:{:.2f} y:{:.2f} z:{:.2f}".format(x, y, z),
+                        (cX + 8, cY + 32),
+                        cv2.FONT_HERSHEY_SIMPLEX,
+                        0.40,
+                        (0,255,255),
+                        1
+            )
 
             rospy.loginfo_throttle(
                 0.5,
