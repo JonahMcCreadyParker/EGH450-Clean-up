@@ -3,12 +3,12 @@
 	<!-- Common Settings -->
 	<arg name="frame_id" default="map" />
 	<arg name="topic_grid" default="/grid" />
-	<arg name="vicon_server_dvp" default="10.68.42.85"/>
+	<arg name="vicon_server_dvp" default="10.68.42.85"/>    <!-- may need to change for the optitrack's most recent address -->
 
 	<!-- Configure for each system Setup -->
 	<arg name="vicon" default="false" />
 	<arg name="optitrack" default="true" />
-	<arg name="vrpn_object_name" default="uavteam6" />
+	<arg name="vrpn_object_name" default="eldrone" />   <!-- this has been editted by team 8 - was "uavteam6"-->
 
 	<!-- VRPN Clinet (VICON) -->
 	<group if="$(arg vicon)">
@@ -36,7 +36,7 @@
 		<!-- This node will launch the node that bridges vicon (optitrack) and MAVROS -->
 		<include file="$(find qutas_lab_450)/launch/vrpn_optiTrack.launch">
 			<!-- <arg name="vrpn_object_name" value="$(arg vrpn_object_name)" /> -->
-			<arg name="vrpn_object_name" default="cdrone" />
+			<arg name="vrpn_object_name" default="eldrone" />
   		</include>
 	</group>
 

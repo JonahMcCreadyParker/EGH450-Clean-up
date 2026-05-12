@@ -38,6 +38,10 @@ class ArucoDetector():
     NEGATIVE_ANGLE = 70
     POSITIVE_ANGLE = -40
 
+    # Payload trigger safety checks
+    PAYLOAD_REQUIRED_COUNT = 5
+    PAYLOAD_MAX_DISTANCE = 4.0
+
     # HUD setup
     SHOW_HUD = False
     SHOW_CROSSHAIR = True
@@ -73,8 +77,9 @@ class ArucoDetector():
         self.M2.angle = self.NEGATIVE_ANGLE
         sleep(1)
 
-        # Prevent repeated triggering every frame
+        # Payload state
         self.payload_deployed = False
+        self.payload_seen_count = 0
 
         # Compatible ArUco dictionary selection
         if hasattr(cv2.aruco, "getPredefinedDictionary"):
@@ -147,12 +152,42 @@ class ArucoDetector():
         self.M2.angle = self.NEGATIVE_ANGLE
         sleep(1)
 
-    def trigger_payload(self, marker_id):
-        # Only trigger once when the correct marker is detected
-        if marker_id == self.PAYLOAD_TRIGGER_ID and not self.payload_deployed:
-            rospy.loginfo("Payload trigger marker detected: ID {}".format(marker_id))
+    def trigger_payload(self, marker_id, distance):
+        # Do nothing if payload has already deployed
+        if self.payload_deployed:
+            return
 
-            # Change this to deploy_M2() if the second payload should drop instead
+        # Reset confirmation count if this is not the correct marker
+        if marker_id != self.PAYLOAD_TRIGGER_ID:
+            self.payload_seen_count = 0
+            return
+
+        # Ignore detections that look too far away to be reliable
+        if distance > self.PAYLOAD_MAX_DISTANCE:
+            rospy.logwarn(
+                "Ignoring payload marker ID {} because distance looks too large: {:.2f} m".format(
+                    marker_id,
+                    distance
+                )
+            )
+            self.payload_seen_count = 0
+            return
+
+        # Confirm the marker over multiple frames
+        self.payload_seen_count += 1
+
+        rospy.loginfo(
+            "Payload marker ID {} confirmed frame {}/{}".format(
+                marker_id,
+                self.payload_seen_count,
+                self.PAYLOAD_REQUIRED_COUNT
+            )
+        )
+
+        if self.payload_seen_count >= self.PAYLOAD_REQUIRED_COUNT:
+            rospy.loginfo("Payload trigger marker confirmed: ID {}".format(marker_id))
+
+            # Deploy payload once
             self.deploy_M1()
 
             self.payload_deployed = True
@@ -379,8 +414,9 @@ class ArucoDetector():
                 parameters=self.aruco_params
             )
 
-        # If no markers are detected, end processing and move to next frame
+        # If no markers are detected, reset payload confirmation count and move to next frame
         if ids is None or len(corners) == 0:
+            self.payload_seen_count = 0
             return frame
 
         # Flatten the ids array for easier processing and logging
@@ -396,11 +432,10 @@ class ArucoDetector():
             [-half, -half, 0.0]    # bottom-left
         ], dtype=np.float32)
 
+        payload_marker_seen_this_frame = False
+
         for marker_corners, marker_id in zip(corners, ids):
             marker_id = int(marker_id)
-
-            # Trigger payload if marker ID 32 is detected
-            self.trigger_payload(marker_id)
 
             pts = marker_corners.reshape((4, 2)).astype(np.float32)
             pts_int = pts.astype(int)
@@ -493,6 +528,11 @@ class ArucoDetector():
             y = -raw_y
             z = raw_z
 
+            # Trigger payload only after pose estimation succeeds
+            if marker_id == self.PAYLOAD_TRIGGER_ID:
+                payload_marker_seen_this_frame = True
+                self.trigger_payload(marker_id, distance)
+
             # For logging detected marker poses
             self.update_detection_log(marker_id, cX, cY, x, y, z, distance)
 
@@ -532,6 +572,10 @@ class ArucoDetector():
                     distance
                 )
             )
+
+        # If other markers are visible but ID 32 is not, reset the payload confirmation count
+        if not payload_marker_seen_this_frame and not self.payload_deployed:
+            self.payload_seen_count = 0
 
         # Move on to next frame
         return frame

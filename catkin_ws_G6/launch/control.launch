@@ -1,6 +1,6 @@
 <?xml version='1.0'?>
 <launch>
-	<arg name="uav_name" default="uavteam8" />
+	<arg name="uav_name" default="eldrone" /> <!-- Edited by team 8 but originally was "uavteam6" -->
 
 	<!-- MAVROS Parameters -->
 	<arg name="fcu_url" default="/dev/ttyUSB0:921600" />
@@ -19,8 +19,8 @@
 
 	<!-- MAVROS Node -->
 	<include file="$(find mavros)/launch/node.launch">
-		<arg name="pluginlists_yaml" value="/home/uavteam6/catkin_ws/launch/px4_pluginlists.yaml" />
-		<arg name="config_yaml" value="/home/uavteam6/catkin_ws/launch/px4_config.yaml" />
+		<arg name="pluginlists_yaml" value="/home/uavteam6/EGB349_Project_eldrone/catkin_ws_G6/launch/px4_pluginlists.yaml" />
+		<arg name="config_yaml" value="/home/uavteam6/EGB349_Project_eldrone/catkin_ws_G6/launch/px4_config.yaml" />
 
 		<arg name="fcu_url" value="$(arg fcu_url)" />
 		<arg name="gcs_url" value="$(arg gcs_url)" />

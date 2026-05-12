@@ -345,7 +345,7 @@ class ArucoDetector():
         # If no markers are detected, end processing and next frame
         if ids is None or len(corners) == 0:
             return frame
-        
+          
         # Flatten the ids array for easier processing and logging
         ids = ids.flatten()
 

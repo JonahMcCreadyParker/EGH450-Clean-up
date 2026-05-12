@@ -1,4 +1,4 @@
-#keyboard input
+2#keyboard input
 from gpiozero import AngularServo
 from time import sleep
 
