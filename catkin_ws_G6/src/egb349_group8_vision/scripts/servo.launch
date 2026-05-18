@@ -1,0 +1,5 @@
+
+<launch>
+    <node name="servo_controller" pkg="egb349_group8_vision" type="servo_controller.py" output="screen"/>
+    <node name="servo_gui" pkg="egb349_group8_vision" type="servo_gui.py" output="screen"/>
+</launch>

@@ -56,26 +56,3 @@ finally:
     print("Stopping servo signals")
     M1.detach()
     M2.detach()
-
-# from gpiozero import AngularServo
-# from time import sleep
-
-# # Create two servos
-# M1 = AngularServo(13, min_pulse_width=0.0005, max_pulse_width=0.0025)
-# M2 = AngularServo(12, min_pulse_width=0.0005, max_pulse_width=0.0025)
-
-# try:
-#     print("Both to -90°")
-#     M1.angle = -90
-#     M2.angle = -90
-#     sleep(1)
-
-#     print("Both to +90°")
-#     M1.angle = 90
-#     M2.angle = 90
-#     sleep(1)
-
-# finally:
-#     print("Stopping servo signal")
-#     M1.detach()
-#     M2.detach()
