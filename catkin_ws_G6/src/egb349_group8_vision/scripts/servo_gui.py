@@ -27,15 +27,15 @@ print("Press n = Neutral")
 print("Press q = Quit")
 
 while not rospy.is_shutdown(): #loops forever until Ctrl + C
-    key = get_key()
+    key = get_key() # waits for a keypress and stores it in key
     if key == '1':
-        print("Deploying M1...")
+        print("Deploying Tracker...")
         pub.publish('1')
     elif key == '2':
-        print("Deploying M2...")
+        print("Deploying EpiPen...")
         pub.publish('2')
     elif key == 'n':
-        print("Neutral...")
+        print("Returning to neutral position")
         pub.publish('n')
     elif key == 'q':
         print("Quitting...")
