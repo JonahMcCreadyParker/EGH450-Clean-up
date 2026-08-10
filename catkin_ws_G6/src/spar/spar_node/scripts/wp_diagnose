@@ -39,7 +39,7 @@ class Guidance():
 		# Make some space to record down our current location
 		self.current_location = Point()
 		# Set our linear and rotational velocities for the flight
-		self.vel_linear = rospy.get_param("~vel_linear", 0.2)
+		self.vel_linear = rospy.get_param("~vel_linear", 0.1) # was 0.2 default
 		self.vel_yaw = rospy.get_param("~vel_yaw", 0.2)
 		# Set our position and yaw waypoint accuracies
 		self.accuracy_pos = rospy.get_param("~acc_pos", 0.1)
@@ -252,25 +252,16 @@ class Guidance():
 def main(args):
 	# Initialise ROS
 	rospy.init_node('guidance')
-	flight_height = 1.0 # meters
+	flight_height = 0.4 # meters
 	# List of waypoints
 	# [X, Y, Z, Yaw]
-	wps = [		[ 	0.0,	0.0, 	flight_height, 	0.0], 	# from origin
-				[ 	-4.0,  	-2.5, 	flight_height, 	0.0],   # our bottom-right corner
-				[	4.0,	-2.5, 	flight_height, 	0.0],   # our top-right corner
-				[	4.0,	-1.5, 	flight_height, 	0.0],
-				[	-4.0,	-1.5, 	flight_height, 	0.0],
-				[	-4.0,	-0.5, 	flight_height, 	0.0],
-				[	4.0,	-0.5, 	flight_height, 	0.0],
-				[	4.0,	0.5, 	flight_height, 	0.0],
-				[	-4.0,	0.5, 	flight_height, 	0.0],
-				[	-4.0,	1.5, 	flight_height, 	0.0],
-				[	4.0,	1.5, 	flight_height, 	0.0],
-				[	4.0,	2.5, 	flight_height, 	0.0], 	# our top-left corner
-				[	-4.0,	2.5, 	flight_height, 	0.0], 	# our bottom-left corner
-				[ 	0.0,	0.0, 	flight_height, 	0.0]	# to origin
-	]
-
+	wps = [	[ 	0.0,	0.0, 	flight_height, 	0.0],
+			[ 	-4.0,  	-2.5, 	flight_height, 	0.0],   # our bottom-right corner
+			[	-4.0,	2.5, 	flight_height, 	0.0],   # our bottom-left corner 
+			[	4.0,	2.5, 	flight_height, 	0.0],   # our top-left corner
+			[ 	4.0,	-2.5, 	flight_height, 	0.0],   # our top-right corner
+			[ 	0.0,	0.0, 	flight_height, 	0.0]
+	   ]
 
 	# Create our guidance class option
 	guide = Guidance(wps)

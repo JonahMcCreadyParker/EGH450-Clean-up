@@ -255,21 +255,21 @@ def main(args):
 	flight_height = 1.0 # meters
 	# List of waypoints
 	# [X, Y, Z, Yaw]
-	wps = [		[ 	0.0,	0.0, 	flight_height, 	0.0], 	# from origin
-				[ 	-4.0,  	-2.5, 	flight_height, 	0.0],   # our bottom-right corner
-				[	4.0,	-2.5, 	flight_height, 	0.0],   # our top-right corner
-				[	4.0,	-1.5, 	flight_height, 	0.0],
-				[	-4.0,	-1.5, 	flight_height, 	0.0],
-				[	-4.0,	-0.5, 	flight_height, 	0.0],
-				[	4.0,	-0.5, 	flight_height, 	0.0],
-				[	4.0,	0.5, 	flight_height, 	0.0],
-				[	-4.0,	0.5, 	flight_height, 	0.0],
-				[	-4.0,	1.5, 	flight_height, 	0.0],
-				[	4.0,	1.5, 	flight_height, 	0.0],
-				[	4.0,	2.5, 	flight_height, 	0.0], 	# our top-left corner
-				[	-4.0,	2.5, 	flight_height, 	0.0], 	# our bottom-left corner
-				[ 	0.0,	0.0, 	flight_height, 	0.0]	# to origin
-	]
+	wps = [			[ 	0.0,	0.0, 	flight_height, 	0.0], 	# from origin
+					[ 	-4.0,  	-2.5, 	flight_height, 	0.0],   # our bottom-right corner
+					[	4.0,	-2.5, 	flight_height, 	0.0],   # our top-right corner
+					[	4.0,	-1.5, 	flight_height, 	0.0],
+					[	-4.0,	-1.5, 	flight_height, 	0.0],
+					[	-4.0,	-0.5, 	flight_height, 	0.0],
+					[	4.0,	-0.5, 	flight_height, 	0.0],
+					[	4.0,	0.5, 	flight_height, 	0.0],
+					[	-4.0,	0.5, 	flight_height, 	0.0],
+					[	-4.0,	1.5, 	flight_height, 	0.0],
+					[	4.0,	1.5, 	flight_height, 	0.0],
+					[	4.0,	2.5, 	flight_height, 	0.0], 	# our top-left corner
+					[	-4.0,	2.5, 	flight_height, 	0.0], 	# our bottom-left corner
+					[ 	0.0,	0.0, 	flight_height, 	0.0]	# to origin
+		]
 
 
 	# Create our guidance class option
