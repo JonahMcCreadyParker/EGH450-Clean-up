@@ -61,7 +61,7 @@ class ArucoDetector():
         # else:
         #     self.aruco_dict = cv2.aruco.Dictionary_get(self.ARUCO_DICT)
 
-        # # Compatible detector parameter creation
+        # Compatible detector parameter creation
         # if hasattr(cv2.aruco, "DetectorParameters_create"):
         #     self.aruco_params = cv2.aruco.DetectorParameters_create()
         # else:
