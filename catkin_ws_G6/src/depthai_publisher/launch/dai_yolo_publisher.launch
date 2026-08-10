@@ -1,0 +1,40 @@
+<launch>
+    <node
+        pkg="depthai_publisher"
+        type="dai_yolo_publisher"
+        name="dai_yolo_publisher"
+        output="screen"
+        respawn="false">
+
+        <param
+            name="blob_path"
+            value="/home/uavteam6/EGB349_Project_eldrone/models/UAS_SAR_v1_RVC2/UAS_SAR_v1_RVC2.blob"
+        />
+
+        <param
+            name="config_path"
+            value="/home/uavteam6/EGB349_Project_eldrone/models/UAS_SAR_v1_RVC2/UAS_SAR_v1_RVC2.json"
+        />
+
+        <param name="confidence" value="0.70" />
+        <param name="iou" value="0.50" />
+        <param name="camera_fps" value="15.0" />
+        <param name="jpeg_quality" value="85" />
+
+        <param
+            name="raw_topic"
+            value="/depthai_node/image/compressed"
+        />
+
+        <param
+            name="annotated_topic"
+            value="/yolo/image/compressed"
+        />
+
+        <param
+            name="detection_topic"
+            value="/yolo/detections"
+        />
+    </node>
+</launch>
+
