@@ -9,6 +9,7 @@ from sensor_msgs.msg import CompressedImage, CameraInfo
 from std_msgs.msg import String
 from visualization_msgs.msg import Marker
 from cv_bridge import CvBridge, CvBridgeError
+from geometry_msgs.msg import PoseStamped
 
 class ArucoDetector():
     #These are top level constants that are east to adjust
@@ -18,6 +19,7 @@ class ArucoDetector():
     OUTPUT_TOPIC = "/processed_aruco/image/compressed"
     POSE_LOG_TOPIC = "/aruco/pose_log"
     RVIZ_LOG_TOPIC = "/aruco/detection_log_text"
+    ROI_TOPIC = "/guidance/roi"
 
     # ArUco setup
     ARUCO_DICT = cv2.aruco.DICT_5X5_100
@@ -99,6 +101,16 @@ class ArucoDetector():
             Marker,
             queue_size=10
         )
+
+        # Publish ROI commands for the navigation system
+        self.roi_pub = rospy.Publisher(
+            self.ROI_TOPIC,
+            PoseStamped,
+            queue_size=1
+        )
+
+        # Prevent the same marker continuously triggering ROI diversions
+        self.roi_triggered = False # This is used in the below function, just defined here
 
         # Log info
         rospy.loginfo("ArUco detector started")
@@ -439,6 +451,10 @@ class ArucoDetector():
             # For logging detected marker poses
             self.update_detection_log(marker_id, cX, cY, x, y, z, distance)
 
+            # FOR JONAH
+            # Trigger ROI diversion
+            self.publish_test_roi(marker_id)
+
             # Small HUD box beside each detected marker
             if self.SHOW_HUD:
                 self.draw_marker_hud(frame, cX, cY, marker_id, distance, x, y, z)
@@ -476,6 +492,38 @@ class ArucoDetector():
 
         # move on to next frame
         return frame
+
+    # ROI addition for JONAH 
+    def publish_test_roi(self, marker_id):
+        # This will only do the one diversion for a marker, to stop it looping on itself
+        # As it will see the marker in multiple frames
+        if self.roi_triggered:
+            return # So it will never perform twice
+
+        roi_msg = PoseStamped()
+        roi_msg.header.stamp = rospy.Time.now()
+        roi_msg.header.frame_id = "map" # Map frame, as the navigation system is using map frame for its position
+
+        # This is the fixed position chosen (X,Y,Z) = (2.0, 2.0, 1.5) for the ROI diversion
+        roi_msg.pose.position.x = 2.0
+        roi_msg.pose.position.y = 2.0
+        roi_msg.pose.position.z = 1.5
+
+        # This is no rotation
+        roi_msg.pose.orientation.x = 0.0
+        roi_msg.pose.orientation.y = 0.0
+        roi_msg.pose.orientation.z = 0.0
+        roi_msg.pose.orientation.w = 1.0 # Identity stuff, quarternion
+
+        #
+        self.roi_pub.publish(roi_msg)
+        self.roi_triggered = True
+
+        rospy.logwarn(
+            "ArUco ID {} detected - ROI diversion requested to (2.0, 2.0, 1.5)".format(
+                marker_id
+            )
+        )
     
     def publish_to_ros(self, frame):
         # Convert processed OpenCV image back to ROS CompressedImage and publish
