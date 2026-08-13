@@ -3,7 +3,7 @@
         "model_optimizer": [
             "mo",
             "--output_dir",
-            "shared_with_container/outputs/yolo11n_sar_640_fp16_no_nms_to_rvc2_2026_07_26_12_32_19/intermediate_outputs",
+            "shared_with_container/outputs/exp-5_to_rvc2_2026_08_11_07_39_14/intermediate_outputs",
             "--output",
             "output1_yolov6r2,output2_yolov6r2,output3_yolov6r2",
             "--compress_to_fp16",
@@ -15,7 +15,7 @@
             "images[255.0,255.0,255.0]",
             "--reverse_input_channels",
             "--input_model",
-            "shared_with_container/outputs/yolo11n_sar_640_fp16_no_nms_to_rvc2_2026_07_26_12_32_19/intermediate_outputs/yolo11n_sar_640_fp16_no_nms-simplified.onnx"
+            "shared_with_container/outputs/exp-5_to_rvc2_2026_08_11_07_39_14/intermediate_outputs/exp-5-simplified.onnx"
         ],
         "compile_tool": [
             "compile_tool",
@@ -24,11 +24,11 @@
             "-ip",
             "U8",
             "-m",
-            "shared_with_container/outputs/yolo11n_sar_640_fp16_no_nms_to_rvc2_2026_07_26_12_32_19/intermediate_outputs/yolo11n_sar_640_fp16_no_nms-simplified.xml",
+            "shared_with_container/outputs/exp-5_to_rvc2_2026_08_11_07_39_14/intermediate_outputs/exp-5-simplified.xml",
             "-o",
-            "shared_with_container/outputs/yolo11n_sar_640_fp16_no_nms_to_rvc2_2026_07_26_12_32_19/yolo11n_sar_640_fp16_no_nms-rvc2.blob",
+            "shared_with_container/outputs/exp-5_to_rvc2_2026_08_11_07_39_14/exp-5-rvc2.blob",
             "-c",
-            "/tmp/tmpybv76086.conf"
+            "/tmp/tmp1e_8jqq2.conf"
         ]
     },
     "modelconverter_version": "0.5.6",
@@ -39,6 +39,6 @@
         "MYRIAD"
     ],
     "is_superblob": false,
-    "number_of_shaves": 8,
-    "number_of_cmx_slices": 8
+    "number_of_shaves": 6,
+    "number_of_cmx_slices": 6
 }
