@@ -8,15 +8,15 @@
 
         <param
             name="blob_path"
-            value="/home/uavteam6/EGB349_Project_eldrone/models/UAS_SAR_v1_RVC2/UAS_SAR_v1_RVC2.blob"
+            value="/home/uavteam6/EGB349_Project_eldrone/models/UAS_SAR_v5_RVC2/UAS_SAR_v5_RVC2.blob"
         />
 
         <param
             name="config_path"
-            value="/home/uavteam6/EGB349_Project_eldrone/models/UAS_SAR_v1_RVC2/UAS_SAR_v1_RVC2.json"
+            value="/home/uavteam6/EGB349_Project_eldrone/models/UAS_SAR_v5_RVC2/UAS_SAR_v5_RVC2.json"
         />
 
-        <param name="confidence" value="0.85" />
+        <param name="confidence" value="0.75" />
         <param name="iou" value="0.50" />
         <param name="camera_fps" value="15.0" />
         <param name="jpeg_quality" value="85" />

@@ -2,755 +2,349 @@
 
 import json
 import time
-from pathlib import Path
-from typing import Dict, List
-
 import cv2
 import depthai as dai
 import rospy
+
 from sensor_msgs.msg import CompressedImage
 from std_msgs.msg import String
 
+# This is the detector for backapck and person's
 
-class DaiYoloPublisher:
-    """Run YOLO inference on the OAK-D Pro Myriad X and publish ROS topics."""
+class YoloDetector():
+    # These are top level settings that are easy to adjust
 
-    def __init__(self) -> None:
-        default_model_directory = Path(
-            "/home/uavteam6/EGB349_Project_eldrone/"
-            "models/UAS_SAR_v1_RVC2"
+    # ROS topics
+    RAW_TOPIC = "/depthai_node/image/compressed"
+    OUTPUT_TOPIC = "/yolo/image/compressed"
+    DETECTION_TOPIC = "/yolo/detections"
+
+    # YOLO settings
+    CONFIDENCE = 0.70
+    IOU = 0.50
+    CAMERA_FPS = 15.0
+    JPEG_QUALITY = 85
+
+
+    def __init__(self):
+        # Model files are set in the launch file
+        self.blob_path = rospy.get_param("~blob_path")
+        self.config_path = rospy.get_param("~config_path")
+
+        # Allow the main settings to also be changed from the launch file
+        self.confidence = float(
+            rospy.get_param("~confidence", self.CONFIDENCE)
+        )
+        self.iou = float(
+            rospy.get_param("~iou", self.IOU)
+        )
+        self.camera_fps = float(
+            rospy.get_param("~camera_fps", self.CAMERA_FPS)
+        )
+        self.jpeg_quality = int(
+            rospy.get_param("~jpeg_quality", self.JPEG_QUALITY)
         )
 
-        self.blob_path = Path(
-            rospy.get_param(
-                "~blob_path",
-                str(default_model_directory / "UAS_SAR_v1_RVC2.blob"),
-            )
-        )
-
-        self.config_path = Path(
-            rospy.get_param(
-                "~config_path",
-                str(default_model_directory / "UAS_SAR_v1_RVC2.json"),
-            )
-        )
-
-        self.confidence_threshold = float(
-            rospy.get_param("~confidence", 0.70)
-        )
-        self.iou_threshold = float(rospy.get_param("~iou", 0.50))
-        self.camera_fps = float(rospy.get_param("~camera_fps", 15.0))
-        self.jpeg_quality = int(rospy.get_param("~jpeg_quality", 85))
-
-        self.raw_topic = rospy.get_param(
-            "~raw_topic",
-            "/depthai_node/image/compressed",
-        )
-        self.annotated_topic = rospy.get_param(
-            "~annotated_topic",
-            "/yolo/image/compressed",
+        # ROS topics can also be changed from the launch file
+        self.raw_topic = rospy.get_param("~raw_topic", self.RAW_TOPIC)
+        self.output_topic = rospy.get_param(
+            "~annotated_topic", self.OUTPUT_TOPIC
         )
         self.detection_topic = rospy.get_param(
-            "~detection_topic",
-            "/yolo/detections",
+            "~detection_topic", self.DETECTION_TOPIC
         )
 
-        self._validate_files()
-        self.config = self._load_config()
-        self.labels = self._load_labels()
-        self.input_width, self.input_height = self._load_input_size()
+        # Read model config
+        with open(self.config_path, "r") as config_file:
+            self.config = json.load(config_file)
 
-        self.raw_publisher = rospy.Publisher(
+        self.labels = self.get_labels()
+        self.input_width, self.input_height = self.get_input_size()
+
+        # Raw OAK-D image output
+        self.raw_pub = rospy.Publisher(
             self.raw_topic,
             CompressedImage,
-            queue_size=1,
+            queue_size=1
         )
-        self.annotated_publisher = rospy.Publisher(
-            self.annotated_topic,
+
+        # YOLO processed image output
+        self.yolo_pub = rospy.Publisher(
+            self.output_topic,
             CompressedImage,
-            queue_size=1,
+            queue_size=1
         )
-        self.detection_publisher = rospy.Publisher(
+
+        # Text output of current detections
+        self.detection_pub = rospy.Publisher(
             self.detection_topic,
             String,
-            queue_size=10,
+            queue_size=10
         )
 
-        self.pipeline = self._create_pipeline()
+        # Build the OAK-D pipeline
+        self.pipeline = self.create_pipeline()
 
-        rospy.loginfo("OAK-D Myriad X YOLO publisher configured")
-        rospy.loginfo("Blob: %s", self.blob_path)
+        rospy.loginfo("YOLO detector started")
+        rospy.loginfo("Model: {}".format(self.blob_path))
         rospy.loginfo(
-            "Input: %dx%d",
-            self.input_width,
-            self.input_height,
+            "Input size: {}x{}".format(
+                self.input_width,
+                self.input_height
+            )
         )
-        rospy.loginfo("Classes: %s", ", ".join(self.labels))
-        rospy.loginfo("Confidence threshold: %.2f", self.confidence_threshold)
+        rospy.loginfo("Classes: {}".format(", ".join(self.labels)))
 
-    def _validate_files(self) -> None:
-        if not self.blob_path.is_file():
-            raise FileNotFoundError(
-                f"RVC2 blob not found: {self.blob_path}"
-            )
 
-        if not self.config_path.is_file():
-            raise FileNotFoundError(
-                f"Model config not found: {self.config_path}"
-            )
+    def get_labels(self):
+        # New Luxonis config format
+        labels = self.config.get("mappings", {}).get("labels", [])
 
-    def _load_config(self) -> Dict:
-        with self.config_path.open("r", encoding="utf-8") as config_file:
-            return json.load(config_file)
+        if labels:
+            return labels
 
-    def _load_labels(self) -> List[str]:
-        heads = self.config["model"].get("heads", [])
+        # Older Luxonis config format
+        heads = self.config.get("model", {}).get("heads", [])
 
-        if not heads:
-            raise ValueError("No detector head found in model config")
+        for head in heads:
+            labels = head.get("metadata", {}).get("classes", [])
 
-        labels = heads[0]["metadata"].get("classes", [])
+            if labels:
+                return labels
 
-        if not labels:
-            raise ValueError("No class names found in model config")
+        raise ValueError("No YOLO class labels found")
 
-        return labels
 
-    def _load_input_size(self) -> tuple:
-        inputs = self.config["model"].get("inputs", [])
+    def get_input_size(self):
+        # New Luxonis config format - for example 416x416
+        size = self.config.get("nn_config", {}).get("input_size")
 
-        if not inputs:
-            raise ValueError("No input metadata found in model config")
+        if size:
+            width, height = size.split("x")
+            return int(width), int(height)
 
-        shape = inputs[0].get("shape", [])
+        # Older Luxonis config format
+        inputs = self.config.get("model", {}).get("inputs", [])
 
-        if len(shape) != 4:
-            raise ValueError(f"Unexpected model input shape: {shape}")
+        if inputs:
+            shape = inputs[0].get("shape", [])
 
-        # NCHW: [batch, channels, height, width]
-        return int(shape[3]), int(shape[2])
+            # Shape is NCHW
+            if len(shape) == 4:
+                return int(shape[3]), int(shape[2])
 
-    def _create_pipeline(self) -> dai.Pipeline:
+        raise ValueError("Could not find YOLO input size")
+
+
+    def create_pipeline(self):
+        # Main DepthAI pipeline
         pipeline = dai.Pipeline()
 
+        # OAK-D RGB camera
         camera = pipeline.create(dai.node.ColorCamera)
         camera.setResolution(
             dai.ColorCameraProperties.SensorResolution.THE_1080_P
         )
         camera.setPreviewSize(
             self.input_width,
-            self.input_height,
+            self.input_height
         )
+        camera.setPreviewKeepAspectRatio(False)
         camera.setInterleaved(False)
         camera.setColorOrder(
             dai.ColorCameraProperties.ColorOrder.BGR
         )
-        camera.setPreviewKeepAspectRatio(False)
         camera.setFps(self.camera_fps)
 
-        detector = pipeline.create(dai.node.YoloDetectionNetwork)
-        detector.setBlobPath(str(self.blob_path))
-        detector.setConfidenceThreshold(self.confidence_threshold)
-        detector.setNumClasses(len(self.labels))
-        detector.setCoordinateSize(4)
-        detector.setIouThreshold(self.iou_threshold)
-        detector.setNumInferenceThreads(2)
+        # YOLO runs directly on the OAK-D Myriad X
+        yolo = pipeline.create(dai.node.YoloDetectionNetwork)
+        yolo.setBlobPath(self.blob_path)
+        yolo.setConfidenceThreshold(self.confidence)
+        yolo.setIouThreshold(self.iou)
+        yolo.setNumClasses(len(self.labels))
+        yolo.setCoordinateSize(4)
+        yolo.setNumInferenceThreads(2)
 
-        detector.input.setBlocking(False)
-        detector.input.setQueueSize(1)
+        yolo.input.setBlocking(False)
+        yolo.input.setQueueSize(1)
 
-        camera.preview.link(detector.input)
+        camera.preview.link(yolo.input)
 
-        raw_output = pipeline.create(dai.node.XLinkOut)
-        raw_output.setStreamName("raw")
-        detector.passthrough.link(raw_output.input)
+        # Send camera image back to the Pi
+        image_output = pipeline.create(dai.node.XLinkOut)
+        image_output.setStreamName("frames")
+        yolo.passthrough.link(image_output.input)
 
+        # Send YOLO detections back to the Pi
         detection_output = pipeline.create(dai.node.XLinkOut)
         detection_output.setStreamName("detections")
-        detector.out.link(detection_output.input)
+        yolo.out.link(detection_output.input)
 
         return pipeline
 
-    @staticmethod
-    def _clamp(value: int, minimum: int, maximum: int) -> int:
-        return max(minimum, min(value, maximum))
 
-    def _publish_compressed(
-        self,
-        publisher: rospy.Publisher,
-        frame,
-        stamp: rospy.Time,
-    ) -> None:
-        success, encoded = cv2.imencode(
-            ".jpg",
-            frame,
-            [int(cv2.IMWRITE_JPEG_QUALITY), self.jpeg_quality],
-        )
-
-        if not success:
-            rospy.logwarn_throttle(5.0, "JPEG encoding failed")
-            return
-
-        message = CompressedImage()
-        message.header.stamp = stamp
-        message.header.frame_id = "oak_rgb_camera"
-        message.format = "jpeg"
-        message.data = encoded.tobytes()
-
-        publisher.publish(message)
-
-    def _draw_detections(
-        self,
-        frame,
-        detections,
-    ) -> List[str]:
-        frame_height, frame_width = frame.shape[:2]
-        detection_strings = []
+    def draw_detections(self, frame, detections):
+        # Draw YOLO detections onto the image
+        height, width = frame.shape[:2]
+        detection_log = []
 
         for detection in detections:
-            x1 = self._clamp(
-                int(detection.xmin * frame_width),
-                0,
-                frame_width - 1,
-            )
-            y1 = self._clamp(
-                int(detection.ymin * frame_height),
-                0,
-                frame_height - 1,
-            )
-            x2 = self._clamp(
-                int(detection.xmax * frame_width),
-                0,
-                frame_width - 1,
-            )
-            y2 = self._clamp(
-                int(detection.ymax * frame_height),
-                0,
-                frame_height - 1,
-            )
+            x1 = int(detection.xmin * width)
+            y1 = int(detection.ymin * height)
+            x2 = int(detection.xmax * width)
+            y2 = int(detection.ymax * height)
 
             class_id = int(detection.label)
-
-            if 0 <= class_id < len(self.labels):
-                class_name = self.labels[class_id]
-            else:
-                class_name = f"class_{class_id}"
-
             confidence = float(detection.confidence)
-            centre_x = int((x1 + x2) / 2)
-            centre_y = int((y1 + y2) / 2)
 
-            detection_strings.append(
-                f"{class_name}:{confidence:.2f}"
-                f"@({centre_x},{centre_y})"
+            if class_id < len(self.labels):
+                label = self.labels[class_id]
+            else:
+                label = "Unknown"
+
+            # Centre of detected object
+            cX = (x1 + x2) // 2
+            cY = (y1 + y2) // 2
+
+            # Save detection as text for ROS
+            detection_log.append(
+                "{}:{:.2f}@({},{})".format(
+                    label,
+                    confidence,
+                    cX,
+                    cY
+                )
             )
 
-            label_text = f"{class_name} {confidence:.2f}"
-
+            # Detection box
             cv2.rectangle(
                 frame,
                 (x1, y1),
                 (x2, y2),
                 (255, 0, 0),
-                2,
+                2
             )
 
+            # Detection centre point
             cv2.circle(
                 frame,
-                (centre_x, centre_y),
+                (cX, cY),
                 4,
                 (0, 255, 255),
-                -1,
+                -1
             )
 
+            # Class and confidence
             cv2.putText(
                 frame,
-                label_text,
+                "{} {:.2f}".format(label, confidence),
                 (x1, max(y1 - 8, 20)),
                 cv2.FONT_HERSHEY_SIMPLEX,
                 0.6,
                 (255, 0, 0),
-                2,
-                cv2.LINE_AA,
+                2
             )
 
-        return detection_strings
-
-    def run(self) -> None:
-        with dai.Device(self.pipeline) as device:
-            raw_queue = device.getOutputQueue(
-                name="raw",
-                maxSize=1,
-                blocking=False,
-            )
-            detection_queue = device.getOutputQueue(
-                name="detections",
-                maxSize=1,
-                blocking=False,
-            )
-
-            rospy.loginfo(
-                "OAK-D connected. YOLO inference is running on Myriad X."
-            )
-
-            last_time = time.monotonic()
-            filtered_fps = 0.0
-
-            while not rospy.is_shutdown():
-                frame_packet = raw_queue.get()
-                detection_packet = detection_queue.get()
-
-                frame = frame_packet.getCvFrame()
-                annotated_frame = frame.copy()
-
-                detection_strings = self._draw_detections(
-                    annotated_frame,
-                    detection_packet.detections,
-                )
-
-                current_time = time.monotonic()
-                elapsed = current_time - last_time
-                last_time = current_time
-
-                if elapsed > 0:
-                    instant_fps = 1.0 / elapsed
-
-                    if filtered_fps == 0:
-                        filtered_fps = instant_fps
-                    else:
-                        filtered_fps = (
-                            0.9 * filtered_fps
-                            + 0.1 * instant_fps
-                        )
-
-                overlay_text = (
-                    f"Detections: {len(detection_strings)}"
-                    f" | Myriad X FPS: {filtered_fps:.1f}"
-                )
-
-                cv2.putText(
-                    annotated_frame,
-                    overlay_text,
-                    (12, 28),
-                    cv2.FONT_HERSHEY_SIMPLEX,
-                    0.7,
-                    (0, 255, 0),
-                    2,
-                    cv2.LINE_AA,
-                )
-
-                stamp = rospy.Time.now()
-
-                self._publish_compressed(
-                    self.raw_publisher,
-                    frame,
-                    stamp,
-                )
-                self._publish_compressed(
-                    self.annotated_publisher,
-                    annotated_frame,
-                    stamp,
-                )
-
-                detection_message = "; ".join(detection_strings)
-                self.detection_publisher.publish(detection_message)
-
-                if detection_strings:
-                    rospy.loginfo_throttle(
-                        1.0,
-                        "Detections: %s",
-                        detection_message,
-                    )
+        return detection_log
 
 
-def main() -> None:
-    rospy.init_node("dai_yolo_publisher")
-
-    try:
-        publisher = DaiYoloPublisher()
-        publisher.run()
-    except Exception as error:
-        rospy.logfatal("DaiYoloPublisher failed: %s", error)
-        raise
-
-
-if __name__ == "__main__":
-    main()
-#!/usr/bin/env python3
-
-import json
-import time
-from pathlib import Path
-from typing import Dict, List
-
-import cv2
-import depthai as dai
-import rospy
-from sensor_msgs.msg import CompressedImage
-from std_msgs.msg import String
-
-
-class DaiYoloPublisher:
-    """Run YOLO inference on the OAK-D Pro Myriad X and publish ROS topics."""
-
-    def __init__(self) -> None:
-        default_model_directory = Path(
-            "/home/uavteam6/EGB349_Project_eldrone/"
-            "models/UAS_SAR_v1_RVC2"
-        )
-
-        self.blob_path = Path(
-            rospy.get_param(
-                "~blob_path",
-                str(default_model_directory / "UAS_SAR_v1_RVC2.blob"),
-            )
-        )
-
-        self.config_path = Path(
-            rospy.get_param(
-                "~config_path",
-                str(default_model_directory / "UAS_SAR_v1_RVC2.json"),
-            )
-        )
-
-        self.confidence_threshold = float(
-            rospy.get_param("~confidence", 0.70)
-        )
-        self.iou_threshold = float(rospy.get_param("~iou", 0.50))
-        self.camera_fps = float(rospy.get_param("~camera_fps", 15.0))
-        self.jpeg_quality = int(rospy.get_param("~jpeg_quality", 85))
-
-        self.raw_topic = rospy.get_param(
-            "~raw_topic",
-            "/depthai_node/image/compressed",
-        )
-        self.annotated_topic = rospy.get_param(
-            "~annotated_topic",
-            "/yolo/image/compressed",
-        )
-        self.detection_topic = rospy.get_param(
-            "~detection_topic",
-            "/yolo/detections",
-        )
-
-        self._validate_files()
-        self.config = self._load_config()
-        self.labels = self._load_labels()
-        self.input_width, self.input_height = self._load_input_size()
-
-        self.raw_publisher = rospy.Publisher(
-            self.raw_topic,
-            CompressedImage,
-            queue_size=1,
-        )
-        self.annotated_publisher = rospy.Publisher(
-            self.annotated_topic,
-            CompressedImage,
-            queue_size=1,
-        )
-        self.detection_publisher = rospy.Publisher(
-            self.detection_topic,
-            String,
-            queue_size=10,
-        )
-
-        self.pipeline = self._create_pipeline()
-
-        rospy.loginfo("OAK-D Myriad X YOLO publisher configured")
-        rospy.loginfo("Blob: %s", self.blob_path)
-        rospy.loginfo(
-            "Input: %dx%d",
-            self.input_width,
-            self.input_height,
-        )
-        rospy.loginfo("Classes: %s", ", ".join(self.labels))
-        rospy.loginfo("Confidence threshold: %.2f", self.confidence_threshold)
-
-    def _validate_files(self) -> None:
-        if not self.blob_path.is_file():
-            raise FileNotFoundError(
-                f"RVC2 blob not found: {self.blob_path}"
-            )
-
-        if not self.config_path.is_file():
-            raise FileNotFoundError(
-                f"Model config not found: {self.config_path}"
-            )
-
-    def _load_config(self) -> Dict:
-        with self.config_path.open("r", encoding="utf-8") as config_file:
-            return json.load(config_file)
-
-    def _load_labels(self) -> List[str]:
-        heads = self.config["model"].get("heads", [])
-
-        if not heads:
-            raise ValueError("No detector head found in model config")
-
-        labels = heads[0]["metadata"].get("classes", [])
-
-        if not labels:
-            raise ValueError("No class names found in model config")
-
-        return labels
-
-    def _load_input_size(self) -> tuple:
-        inputs = self.config["model"].get("inputs", [])
-
-        if not inputs:
-            raise ValueError("No input metadata found in model config")
-
-        shape = inputs[0].get("shape", [])
-
-        if len(shape) != 4:
-            raise ValueError(f"Unexpected model input shape: {shape}")
-
-        # NCHW: [batch, channels, height, width]
-        return int(shape[3]), int(shape[2])
-
-    def _create_pipeline(self) -> dai.Pipeline:
-        pipeline = dai.Pipeline()
-
-        camera = pipeline.create(dai.node.ColorCamera)
-        camera.setResolution(
-            dai.ColorCameraProperties.SensorResolution.THE_1080_P
-        )
-        camera.setPreviewSize(
-            self.input_width,
-            self.input_height,
-        )
-        camera.setInterleaved(False)
-        camera.setColorOrder(
-            dai.ColorCameraProperties.ColorOrder.BGR
-        )
-        camera.setPreviewKeepAspectRatio(False)
-        camera.setFps(self.camera_fps)
-
-        detector = pipeline.create(dai.node.YoloDetectionNetwork)
-        detector.setBlobPath(str(self.blob_path))
-        detector.setConfidenceThreshold(self.confidence_threshold)
-        detector.setNumClasses(len(self.labels))
-        detector.setCoordinateSize(4)
-        detector.setIouThreshold(self.iou_threshold)
-        detector.setNumInferenceThreads(2)
-
-        detector.input.setBlocking(False)
-        detector.input.setQueueSize(1)
-
-        camera.preview.link(detector.input)
-
-        raw_output = pipeline.create(dai.node.XLinkOut)
-        raw_output.setStreamName("raw")
-        detector.passthrough.link(raw_output.input)
-
-        detection_output = pipeline.create(dai.node.XLinkOut)
-        detection_output.setStreamName("detections")
-        detector.out.link(detection_output.input)
-
-        return pipeline
-
-    @staticmethod
-    def _clamp(value: int, minimum: int, maximum: int) -> int:
-        return max(minimum, min(value, maximum))
-
-    def _publish_compressed(
-        self,
-        publisher: rospy.Publisher,
-        frame,
-        stamp: rospy.Time,
-    ) -> None:
-        success, encoded = cv2.imencode(
+    def publish_image(self, publisher, frame):
+        # Convert OpenCV image to ROS CompressedImage
+        success, encoded_image = cv2.imencode(
             ".jpg",
             frame,
-            [int(cv2.IMWRITE_JPEG_QUALITY), self.jpeg_quality],
+            [cv2.IMWRITE_JPEG_QUALITY, self.jpeg_quality]
         )
 
         if not success:
-            rospy.logwarn_throttle(5.0, "JPEG encoding failed")
+            rospy.logwarn("Failed to encode YOLO image")
             return
 
-        message = CompressedImage()
-        message.header.stamp = stamp
-        message.header.frame_id = "oak_rgb_camera"
-        message.format = "jpeg"
-        message.data = encoded.tobytes()
+        msg = CompressedImage()
+        msg.header.stamp = rospy.Time.now()
+        msg.header.frame_id = "oak_rgb_camera"
+        msg.format = "jpeg"
+        msg.data = encoded_image.tobytes()
 
-        publisher.publish(message)
+        publisher.publish(msg)
 
-    def _draw_detections(
-        self,
-        frame,
-        detections,
-    ) -> List[str]:
-        frame_height, frame_width = frame.shape[:2]
-        detection_strings = []
 
-        for detection in detections:
-            x1 = self._clamp(
-                int(detection.xmin * frame_width),
-                0,
-                frame_width - 1,
-            )
-            y1 = self._clamp(
-                int(detection.ymin * frame_height),
-                0,
-                frame_height - 1,
-            )
-            x2 = self._clamp(
-                int(detection.xmax * frame_width),
-                0,
-                frame_width - 1,
-            )
-            y2 = self._clamp(
-                int(detection.ymax * frame_height),
-                0,
-                frame_height - 1,
-            )
-
-            class_id = int(detection.label)
-
-            if 0 <= class_id < len(self.labels):
-                class_name = self.labels[class_id]
-            else:
-                class_name = f"class_{class_id}"
-
-            confidence = float(detection.confidence)
-            centre_x = int((x1 + x2) / 2)
-            centre_y = int((y1 + y2) / 2)
-
-            detection_strings.append(
-                f"{class_name}:{confidence:.2f}"
-                f"@({centre_x},{centre_y})"
-            )
-
-            label_text = f"{class_name} {confidence:.2f}"
-
-            cv2.rectangle(
-                frame,
-                (x1, y1),
-                (x2, y2),
-                (255, 0, 0),
-                2,
-            )
-
-            cv2.circle(
-                frame,
-                (centre_x, centre_y),
-                4,
-                (0, 255, 255),
-                -1,
-            )
-
-            cv2.putText(
-                frame,
-                label_text,
-                (x1, max(y1 - 8, 20)),
-                cv2.FONT_HERSHEY_SIMPLEX,
-                0.6,
-                (255, 0, 0),
-                2,
-                cv2.LINE_AA,
-            )
-
-        return detection_strings
-
-    def run(self) -> None:
+    def run(self):
+        # Start the DepthAI pipeline on the OAK-D
         with dai.Device(self.pipeline) as device:
-            raw_queue = device.getOutputQueue(
-                name="raw",
+
+            frame_queue = device.getOutputQueue(
+                "frames",
                 maxSize=1,
-                blocking=False,
+                blocking=False
             )
+
             detection_queue = device.getOutputQueue(
-                name="detections",
+                "detections",
                 maxSize=1,
-                blocking=False,
+                blocking=False
             )
 
             rospy.loginfo(
-                "OAK-D connected. YOLO inference is running on Myriad X."
+                "OAK-D connected - YOLO running on Myriad X"
             )
 
-            last_time = time.monotonic()
-            filtered_fps = 0.0
+            last_time = time.time()
+            fps = 0.0
 
             while not rospy.is_shutdown():
-                frame_packet = raw_queue.get()
-                detection_packet = detection_queue.get()
+                frame = frame_queue.get().getCvFrame()
+                detections = detection_queue.get().detections
 
-                frame = frame_packet.getCvFrame()
-                annotated_frame = frame.copy()
+                processed_frame = frame.copy()
 
-                detection_strings = self._draw_detections(
-                    annotated_frame,
-                    detection_packet.detections,
+                detection_log = self.draw_detections(
+                    processed_frame,
+                    detections
                 )
 
-                current_time = time.monotonic()
-                elapsed = current_time - last_time
+                # Calculate current processing FPS
+                current_time = time.time()
+                frame_time = current_time - last_time
                 last_time = current_time
 
-                if elapsed > 0:
-                    instant_fps = 1.0 / elapsed
-
-                    if filtered_fps == 0:
-                        filtered_fps = instant_fps
-                    else:
-                        filtered_fps = (
-                            0.9 * filtered_fps
-                            + 0.1 * instant_fps
-                        )
-
-                overlay_text = (
-                    f"Detections: {len(detection_strings)}"
-                    f" | Myriad X FPS: {filtered_fps:.1f}"
-                )
+                if frame_time > 0:
+                    fps = 1.0 / frame_time
 
                 cv2.putText(
-                    annotated_frame,
-                    overlay_text,
+                    processed_frame,
+                    "Detections: {} | FPS: {:.1f}".format(
+                        len(detection_log),
+                        fps
+                    ),
                     (12, 28),
                     cv2.FONT_HERSHEY_SIMPLEX,
                     0.7,
                     (0, 255, 0),
-                    2,
-                    cv2.LINE_AA,
+                    2
                 )
 
-                stamp = rospy.Time.now()
+                # Publish raw and processed camera images
+                self.publish_image(self.raw_pub, frame)
+                self.publish_image(self.yolo_pub, processed_frame)
 
-                self._publish_compressed(
-                    self.raw_publisher,
-                    frame,
-                    stamp,
-                )
-                self._publish_compressed(
-                    self.annotated_publisher,
-                    annotated_frame,
-                    stamp,
-                )
+                # Publish detection text
+                detection_text = "; ".join(detection_log)
+                self.detection_pub.publish(detection_text)
 
-                detection_message = "; ".join(detection_strings)
-                self.detection_publisher.publish(detection_message)
-
-                if detection_strings:
+                if detection_log:
                     rospy.loginfo_throttle(
                         1.0,
-                        "Detections: %s",
-                        detection_message,
+                        "YOLO detections: {}".format(detection_text)
                     )
 
 
-def main() -> None:
+if __name__ == "__main__":
     rospy.init_node("dai_yolo_publisher")
 
     try:
-        publisher = DaiYoloPublisher()
-        publisher.run()
-    except Exception as error:
-        rospy.logfatal("DaiYoloPublisher failed: %s", error)
-        raise
+        detector = YoloDetector()
+        detector.run()
 
-
-if __name__ == "__main__":
-    main()
+    except Exception as e:
+        rospy.logerr("YOLO detector error: {}".format(e))
