@@ -137,6 +137,10 @@ class Guidance():
 	# This function will fire whenever a ROI pose message is sent
 	# It is also responsible for handling the ROI "inspection task"
 	def callback_inspect_roi(self, msg_in):
+		# Ignore new ROI requests while already completing a diversion
+		if self.performing_roi:
+			rospy.logwarn("ROI request ignored - diversion already in progress")
+			return
 		# Set our flag that we are performing the diversion
 		self.performing_roi = True
 
@@ -252,24 +256,25 @@ class Guidance():
 def main(args):
 	# Initialise ROS
 	rospy.init_node('guidance')
-	flight_height = 1.0 # meters
+	# flight_height = 1.0 # meters
+
 	# List of waypoints
 	# [X, Y, Z, Yaw]
-	wps = [		[ 	0.0,	0.0, 	flight_height, 	0.0], 	# from origin
-				[ 	-4.0,  	-2.5, 	flight_height, 	0.0],   # our bottom-right corner
-				[	4.0,	-2.5, 	flight_height, 	0.0],   # our top-right corner
-				[	4.0,	-1.5, 	flight_height, 	0.0],
-				[	-4.0,	-1.5, 	flight_height, 	0.0],
-				[	-4.0,	-0.5, 	flight_height, 	0.0],
-				[	4.0,	-0.5, 	flight_height, 	0.0],
-				[	4.0,	0.5, 	flight_height, 	0.0],
-				[	-4.0,	0.5, 	flight_height, 	0.0],
-				[	-4.0,	1.5, 	flight_height, 	0.0],
-				[	4.0,	1.5, 	flight_height, 	0.0],
-				[	4.0,	2.5, 	flight_height, 	0.0], 	# our top-left corner
-				[	-4.0,	2.5, 	flight_height, 	0.0], 	# our bottom-left corner
-				[ 	0.0,	0.0, 	flight_height, 	0.0]	# to origin
-	]
+	wps = [	[ 	0.0,	0.0, 	1.5, 	0.0], 	# from origin
+			[ 	-4.0,  	-2.5, 	1.5, 	0.0],   # our bottom-right corner
+			[	4.0,	-2.5, 	1.5, 	0.0],   # our top-right corner
+			[	4.0,	-1.5, 	1.5, 	0.0],
+			[	-4.0,	-1.5, 	1.5, 	0.0],
+			[	-4.0,	-0.5, 	1.5, 	0.0],
+			[	4.0,	-0.5, 	1.5, 	0.0],
+			[	4.0,	0.5, 	1.5, 	0.0],
+			[	-4.0,	0.5, 	1.5, 	0.0],
+			[	-4.0,	1.5, 	1.5, 	0.0],
+			[	4.0,	1.5, 	1.5, 	0.0],
+			[	4.0,	2.5, 	1.5, 	0.0], 	# our top-left corner
+			[	-4.0,	2.5, 	1.5, 	0.0], 	# our bottom-left corner
+			[ 	0.0,	0.0, 	1.5, 	0.0]]	# to origin
+
 
 
 	# Create our guidance class option
