@@ -2,8 +2,8 @@
     "config_version": "1.0",
     "model": {
         "metadata": {
-            "name": "yolo11n_sar_640_fp16_no_nms",
-            "path": "yolo11n_sar_640_fp16_no_nms.blob",
+            "name": "exp-5",
+            "path": "exp-5.blob",
             "precision": "float16"
         },
         "inputs": [
@@ -97,7 +97,8 @@
                     "angles_outputs": null,
                     "subtype": "yolov8",
                     "n_prototypes": null,
-                    "n_keypoints": null
+                    "n_keypoints": null,
+                    "strides": null
                 },
                 "outputs": [
                     "output1_yolov6r2",
