@@ -39,7 +39,7 @@ class Guidance():
 		# Make some space to record down our current location
 		self.current_location = Point()
 		# Set our linear and rotational velocities for the flight
-		self.vel_linear = rospy.get_param("~vel_linear", 0.2)
+		self.vel_linear = rospy.get_param("~vel_linear", 0.1) #default is 0.2
 		self.vel_yaw = rospy.get_param("~vel_yaw", 0.2)
 		# Set our position and yaw waypoint accuracies
 		self.accuracy_pos = rospy.get_param("~acc_pos", 0.1)
@@ -260,20 +260,26 @@ def main(args):
 
 	# List of waypoints
 	# [X, Y, Z, Yaw]
-	wps = [	[ 	0.0,	0.0, 	1.5, 	0.0], 	# from origin
-			[ 	-4.0,  	-2.5, 	1.5, 	0.0],   # our bottom-right corner
-			[	4.0,	-2.5, 	1.5, 	0.0],   # our top-right corner
-			[	4.0,	-1.5, 	1.5, 	0.0],
-			[	-4.0,	-1.5, 	1.5, 	0.0],
-			[	-4.0,	-0.5, 	1.5, 	0.0],
-			[	4.0,	-0.5, 	1.5, 	0.0],
-			[	4.0,	0.5, 	1.5, 	0.0],
-			[	-4.0,	0.5, 	1.5, 	0.0],
-			[	-4.0,	1.5, 	1.5, 	0.0],
-			[	4.0,	1.5, 	1.5, 	0.0],
-			[	4.0,	2.5, 	1.5, 	0.0], 	# our top-left corner
-			[	-4.0,	2.5, 	1.5, 	0.0], 	# our bottom-left corner
-			[ 	0.0,	0.0, 	1.5, 	0.0]]	# to origin
+		
+	# NEW WAYPOINTS - VERTICAL LAWNMOWER (Extra Repetitions, new height)
+	wps = [
+    [ 0.0,  0.0,  2.0,  0.0],   # from origin
+    [-3.0, -1.5,  2.0,  0.0],	
+    [ 3.0, -1.5,  2.0,  0.0],
+    [ 3.0, -1.0,  2.0,  0.0],
+    [-3.0, -1.0,  2.0,  0.0],
+    [-3.0, -0.5,  2.0,  0.0],
+    [ 3.0, -0.5,  2.0,  0.0],
+    [ 3.0,  0.0,  2.0,  0.0],
+    [-3.0,  0.0,  2.0,  0.0],
+    [-3.0,  0.5,  2.0,  0.0],
+    [ 3.0,  0.5,  2.0,  0.0],
+    [ 3.0,  1.0,  2.0,  0.0],
+    [-3.0,  1.0,  2.0,  0.0],
+    [-3.0,  1.5,  2.0,  0.0],
+    [ 3.0,  1.5,  2.0,  0.0],
+    [ 0.0,  0.0,  2.0,  0.0]    # to origin
+	]
 
 	# Create our guidance class option
 	guide = Guidance(wps)
