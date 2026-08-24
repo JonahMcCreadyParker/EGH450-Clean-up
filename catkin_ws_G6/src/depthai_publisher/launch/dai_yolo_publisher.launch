@@ -16,7 +16,7 @@
             value="/home/uavteam6/EGB349_Project_eldrone/models/UAS_SAR_v5_RVC2/UAS_SAR_v5_RVC2.json"
         />
 
-        <param name="confidence" value="0.75" />
+        <param name="confidence" value="0.80" />
         <param name="iou" value="0.50" />
         <param name="camera_fps" value="15.0" />
         <param name="jpeg_quality" value="85" />
@@ -35,6 +35,23 @@
             name="detection_topic"
             value="/yolo/detections"
         />
-    </node>
-</launch>
 
+        <param
+            name="camera_info_topic"
+            value="/depthai_node/camera/camera_info"
+        />
+
+        <param
+            name="enable_world_position"
+            value="true"
+        />
+    </node>
+
+    <node
+        pkg="egb349_group8_vision"
+        type="aruco_detector.py"
+        name="aruco_detector"
+        output="screen"
+        respawn="false"
+    />
+</launch>

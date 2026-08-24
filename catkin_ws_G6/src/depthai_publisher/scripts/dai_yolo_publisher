@@ -5,9 +5,12 @@ import time
 import cv2
 import depthai as dai
 import rospy
+import numpy as np
 
-from sensor_msgs.msg import CompressedImage
+from sensor_msgs.msg import CompressedImage, CameraInfo
 from std_msgs.msg import String
+from geometry_msgs.msg import PoseStamped, PointStamped
+from tf.transformations import quaternion_matrix
 
 # This is the detector for backapck and person's
 
@@ -18,12 +21,29 @@ class YoloDetector():
     RAW_TOPIC = "/depthai_node/image/compressed"
     OUTPUT_TOPIC = "/yolo/image/compressed"
     DETECTION_TOPIC = "/yolo/detections"
+    CAMERA_INFO_TOPIC = "/depthai_node/camera/camera_info"
+
+    # World position topics
+    UAV_POSE_TOPIC = "/mavros/vision_pose/pose"
+    WORLD_POSITION_TOPIC = "/yolo/world_position"
 
     # YOLO settings
     CONFIDENCE = 0.70
     IOU = 0.50
     CAMERA_FPS = 15.0
     JPEG_QUALITY = 85
+
+    # World position can be turned off for flight if needed
+    ENABLE_WORLD_POSITION = True
+    GROUND_Z = 0.0
+
+    # Camera position relative to OptiTrack rigid body origin
+    # x = forward, y = left, z = up
+    CAMERA_OFFSET = np.array([
+        -0.10,
+        0.00,
+        -0.15
+    ])
 
 
     def __init__(self):
@@ -45,6 +65,11 @@ class YoloDetector():
             rospy.get_param("~jpeg_quality", self.JPEG_QUALITY)
         )
 
+        self.enable_world_position = rospy.get_param(
+            "~enable_world_position",
+            self.ENABLE_WORLD_POSITION
+        )
+
         # ROS topics can also be changed from the launch file
         self.raw_topic = rospy.get_param("~raw_topic", self.RAW_TOPIC)
         self.output_topic = rospy.get_param(
@@ -53,6 +78,13 @@ class YoloDetector():
         self.detection_topic = rospy.get_param(
             "~detection_topic", self.DETECTION_TOPIC
         )
+        self.camera_info_topic = rospy.get_param(
+            "~camera_info_topic", self.CAMERA_INFO_TOPIC
+        )
+
+        # Current UAV pose and camera calibration
+        self.uav_pose = None
+        self.camera_matrix = None
 
         # Read model config
         with open(self.config_path, "r") as config_file:
@@ -82,6 +114,27 @@ class YoloDetector():
             queue_size=10
         )
 
+        # Camera calibration output
+        self.camera_info_pub = rospy.Publisher(
+            self.camera_info_topic,
+            CameraInfo,
+            queue_size=1
+        )
+
+        # UAV pose for calculating target world position
+        self.uav_pose_sub = rospy.Subscriber(
+            self.UAV_POSE_TOPIC,
+            PoseStamped,
+            self.uav_pose_callback
+        )
+
+        # YOLO target world position
+        self.world_position_pub = rospy.Publisher(
+            self.WORLD_POSITION_TOPIC,
+            PointStamped,
+            queue_size=10
+        )
+
         # Build the OAK-D pipeline
         self.pipeline = self.create_pipeline()
 
@@ -94,6 +147,15 @@ class YoloDetector():
             )
         )
         rospy.loginfo("Classes: {}".format(", ".join(self.labels)))
+        rospy.loginfo(
+            "YOLO world position: {}".format(
+                "enabled" if self.enable_world_position else "disabled"
+            )
+        )
+
+
+    def uav_pose_callback(self, msg):
+        self.uav_pose = msg
 
 
     def get_labels(self):
@@ -183,6 +245,103 @@ class YoloDetector():
         return pipeline
 
 
+    def pixel_to_world(self, cX, cY, frame_width, frame_height):
+        # This part can be turned off if world position is not needed
+        if not self.enable_world_position:
+            return None
+
+        if self.uav_pose is None or self.camera_matrix is None:
+            return None
+
+        camera_matrix = self.camera_matrix.copy()
+
+        # Camera calibration is for 640x480 while YOLO image is 416x416
+        scale_x = frame_width / 640.0
+        scale_y = frame_height / 480.0
+
+        camera_matrix[0, 0] *= scale_x
+        camera_matrix[1, 1] *= scale_y
+        camera_matrix[0, 2] *= scale_x
+        camera_matrix[1, 2] *= scale_y
+
+        fx = camera_matrix[0, 0]
+        fy = camera_matrix[1, 1]
+        cx = camera_matrix[0, 2]
+        cy = camera_matrix[1, 2]
+
+        # Detection centre pixel to camera ray
+        ray_camera = np.array([
+            (cX - cx) / fx,
+            (cY - cy) / fy,
+            1.0
+        ])
+
+        # Camera optical frame to UAV body frame
+        # Same convention as ArUco detector
+        ray_body = np.array([
+            -ray_camera[1],
+            -ray_camera[0],
+            -ray_camera[2]
+        ])
+
+        pose = self.uav_pose.pose
+
+        uav_world = np.array([
+            pose.position.x,
+            pose.position.y,
+            pose.position.z
+        ])
+
+        quaternion = [
+            pose.orientation.x,
+            pose.orientation.y,
+            pose.orientation.z,
+            pose.orientation.w
+        ]
+
+        rotation = quaternion_matrix(
+            quaternion
+        )[:3, :3]
+
+        camera_world = (
+            uav_world
+            + rotation.dot(self.CAMERA_OFFSET)
+        )
+
+        ray_world = rotation.dot(ray_body)
+
+        # Ray must point towards the ground
+        if abs(ray_world[2]) < 0.001:
+            return None
+
+        distance = (
+            self.GROUND_Z - camera_world[2]
+        ) / ray_world[2]
+
+        if distance <= 0:
+            return None
+
+        target_world = (
+            camera_world
+            + distance * ray_world
+        )
+
+        return target_world
+
+
+    def publish_world_position(self, world_position):
+        msg = PointStamped()
+
+        msg.header.stamp = rospy.Time.now()
+        msg.header.frame_id = "map"
+
+        msg.point.x = float(world_position[0])
+        msg.point.y = float(world_position[1])
+        msg.point.z = float(world_position[2])
+
+        self.world_position_pub.publish(msg)
+
+
     def draw_detections(self, frame, detections):
         # Draw YOLO detections onto the image
         height, width = frame.shape[:2]
@@ -205,6 +364,29 @@ class YoloDetector():
             # Centre of detected object
             cX = (x1 + x2) // 2
             cY = (y1 + y2) // 2
+
+            # Calculate world position if enabled
+            world_position = self.pixel_to_world(
+                cX,
+                cY,
+                width,
+                height
+            )
+
+            if world_position is not None:
+                self.publish_world_position(
+                    world_position
+                )
+
+                rospy.loginfo_throttle(
+                    1.0,
+                    "YOLO {} world: x={:.2f}, y={:.2f}, z={:.2f}".format(
+                        label,
+                        world_position[0],
+                        world_position[1],
+                        world_position[2]
+                    )
+                )
 
             # Save detection as text for ROS
             detection_log.append(
@@ -273,6 +455,36 @@ class YoloDetector():
         # Start the DepthAI pipeline on the OAK-D
         with dai.Device(self.pipeline) as device:
 
+            # Read RGB camera calibration for the ArUco detector
+            calibration = device.readCalibration()
+
+            intrinsics = calibration.getCameraIntrinsics(
+                dai.CameraBoardSocket.CAM_A,
+                640,
+                480
+            )
+
+            distortion = calibration.getDistortionCoefficients(
+                dai.CameraBoardSocket.CAM_A
+            )
+
+            camera_info = CameraInfo()
+            camera_info.width = 640
+            camera_info.height = 480
+            camera_info.distortion_model = "plumb_bob"
+            camera_info.D = list(distortion)
+            camera_info.K = [
+                intrinsics[0][0], intrinsics[0][1], intrinsics[0][2],
+                intrinsics[1][0], intrinsics[1][1], intrinsics[1][2],
+                intrinsics[2][0], intrinsics[2][1], intrinsics[2][2]
+            ]
+
+            # Same calibration is used for YOLO world position
+            self.camera_matrix = np.array(
+                camera_info.K,
+                dtype=np.float64
+            ).reshape((3, 3))
+
             frame_queue = device.getOutputQueue(
                 "frames",
                 maxSize=1,
@@ -327,6 +539,11 @@ class YoloDetector():
                 # Publish raw and processed camera images
                 self.publish_image(self.raw_pub, frame)
                 self.publish_image(self.yolo_pub, processed_frame)
+
+                # Publish camera calibration for ArUco pose estimation
+                camera_info.header.stamp = rospy.Time.now()
+                camera_info.header.frame_id = "oak_rgb_camera"
+                self.camera_info_pub.publish(camera_info)
 
                 # Publish detection text
                 detection_text = "; ".join(detection_log)
