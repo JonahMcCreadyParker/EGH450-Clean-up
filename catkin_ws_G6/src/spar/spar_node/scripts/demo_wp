@@ -12,7 +12,7 @@ from actionlib_msgs.msg import GoalStatus
 from spar_msgs.msg import FlightMotionAction, FlightMotionGoal
 
 def send_wp(spar_client, x, y, z, yaw):
-	speed = rospy.get_param("~speed", 1.0)
+	speed = rospy.get_param("~speed", 0.5)	#deafult is 1.0
 	accuracy = rospy.get_param("~accuracy", 0.1)
 
 	goal = FlightMotionGoal()
@@ -45,14 +45,58 @@ def send_wps(spar_client):
 
 	# List of waypoints
 	# [X, Y, Z, Yaw]
-	wps = [[ 	0.0, 	0.0, 	1.0, 	0.0],
-		   [ 	1.25, 	0.0, 	1.0, 	0.0],
-		   [ 	0.75, 	-1.25, 	1.0, 	0.0],
-		   [	-0.75,	-1.25, 	1.0, 	0.0],
-		   [ 	-1.25,	0.0, 	1.0, 	0.0],
-		   [ 	-0.75, 	1.25, 	1.0, 	0.0], 
-		   [ 	0.75, 	1.25, 	1.0, 	0.0],
-		   [ 	0.0, 	0.0, 	1.0, 	0.0]]
+
+	# OLD WAYPOINTS - HEXAGON
+	# wps = [[ 	0.0, 	0.0, 	1.0, 	0.0],
+	# 	   [ 	1.25, 	0.0, 	1.0, 	0.0],
+	# 	   [ 	0.75, 	-1.25, 	1.0, 	0.0],
+	# 	   [	-0.75,	-1.25, 	1.0, 	0.0],
+	# 	   [ 	-1.25,	0.0, 	1.0, 	0.0],
+	# 	   [ 	-0.75, 	1.25, 	1.0, 	0.0], 
+	# 	   [ 	0.75, 	1.25, 	1.0, 	0.0],
+	# 	   [ 	0.0, 	0.0, 	1.0, 	0.0]]
+
+	# OLD WAYPOINTS - VERTICAL LAWNMOWER
+	# wps = [	[ 	0.0,	0.0, 	1.0, 	0.0], 	# from origin
+	# 		[ 	-4.0,  	-2.5, 	1.0, 	0.0],   # our bottom-right corner
+	# 		[	4.0,	-2.5, 	1.0, 	0.0],   # our top-right corner
+	# 		[	4.0,	-1.5, 	1.0, 	0.0],
+	# 		[	-4.0,	-1.5, 	1.0, 	0.0],
+	# 		[	-4.0,	-0.5, 	1.0, 	0.0],
+	# 		[	4.0,	-0.5, 	1.0, 	0.0],
+	# 		[	4.0,	0.5, 	1.0, 	0.0],
+	# 		[	-4.0,	0.5, 	1.0, 	0.0],
+	# 		[	-4.0,	1.5, 	1.0, 	0.0],
+	# 		[	4.0,	1.5, 	1.0, 	0.0],
+	# 		[	4.0,	2.5, 	1.0, 	0.0], 	# our top-left corner
+	# 		[	-4.0,	2.5, 	1.0, 	0.0], 	# our bottom-left corner
+	# 		[ 	0.0,	0.0, 	1.0, 	0.0]]	# to origin
+
+	# NEW WAYPOINTS - VERTICAL LAWNMOWER (Extra Repetitions, new height)
+	wps = [
+	[ 0.0,  0.0,  2.0,  0.0],		#test to see what YAW is useing
+	[ 0.0,  0.0,  2.0,  3.141593],	#Radians
+	[ 0.0,  0.0,  2.0,  0.0],		# or 
+	[ 0.0,  0.0,  2.0,  90.0],		#Degrees???
+	[ 0.0,  0.0,  2.0,  0.0],   	# start origin
+    [-3.0, -1.5,  2.0,  0.0],	
+    [ 3.0, -1.5,  2.0,  0.0],
+    [ 3.0, -1.0,  2.0,  0.0],
+    [-3.0, -1.0,  2.0,  0.0],
+    [-3.0, -0.5,  2.0,  0.0],
+    [ 3.0, -0.5,  2.0,  0.0],
+    [ 3.0,  0.0,  2.0,  0.0],
+    [-3.0,  0.0,  2.0,  0.0],
+    [-3.0,  0.5,  2.0,  0.0],
+    [ 3.0,  0.5,  2.0,  0.0],
+    [ 3.0,  1.0,  2.0,  0.0],
+    [-3.0,  1.0,  2.0,  0.0],
+    [-3.0,  1.5,  2.0,  0.0],
+    [ 3.0,  1.5,  2.0,  0.0],
+    [ 0.0,  0.0,  2.0,  0.0]    	# end at origin
+	]
+
+
 
 	# Loop through each waypoint in our list
 	i = 0
