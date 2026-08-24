@@ -35,6 +35,23 @@
             name="detection_topic"
             value="/yolo/detections"
         />
-    </node>
-</launch>
 
+        <param
+            name="camera_info_topic"
+            value="/depthai_node/camera/camera_info"
+        />
+
+        <param
+            name="enable_world_position"
+            value="true"
+        />
+    </node>
+
+    <node
+        pkg="egb349_group8_vision"
+        type="aruco_detector.py"
+        name="aruco_detector"
+        output="screen"
+        respawn="false"
+    />
+</launch>
