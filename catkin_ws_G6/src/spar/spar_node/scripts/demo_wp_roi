@@ -12,6 +12,8 @@ from geometry_msgs.msg import Point, PoseStamped
 
 from spar_msgs.msg import FlightMotionAction, FlightMotionGoal
 
+from sensor_msgs.msg import BatteryState
+
 
 # This is getting a bit more complicated now, so we'll put our information in
 # a class to keep track of all of our variables. This is not so much different
@@ -36,6 +38,9 @@ class Guidance():
 
 		# Save the input waypoints
 		self.waypoints = waypoints
+
+		# Battery warning flags
+		self.warning_20_sent = False
 
 		# Make some space to record down our current location
 		self.current_location = Point()
@@ -70,6 +75,8 @@ class Guidance():
 			self.sub_pose = rospy.Subscriber("~pose", PoseStamped, self.callback_pose)
 			# Subscriber to catch "ROI" diversion commands
 			self.sub_roi = rospy.Subscriber("~roi", PoseStamped, self.callback_inspect_roi)
+			# Subscribe to battery
+			self.sub_battery = rospy.Subscriber("/mavros/battery",BatteryState,self.callback_battery)
 
 			# XXX: Could have a publisher to output our waypoint progress
 			# throughout the flight (should publish each time the waypoint
@@ -134,6 +141,17 @@ class Guidance():
 		# Store the current position at all times so it can be accessed later
 		self.current_location = msg_in.pose.position
 
+	def callback_battery(self, msg):
+		percentage = msg.percentage * 100
+
+		# Low battery landing condition
+		if percentage <= 10:
+			rospy.logwarn("Warning: battery at %.1f%%, execute landing", percentage)
+
+		# Print 20% warning only once
+		elif percentage <= 20 and not self.warning_20_sent:
+			rospy.logwarn("Warning: battery at %.1f%%", percentage)
+			self.warning_20_sent = True
 
 	# This function will fire whenever a ROI pose message is sent
 	# It is also responsible for handling the ROI "inspection task"

@@ -196,6 +196,7 @@ class ArucoDetector():
                     msg_in
                 )
             )
+
         except CvBridgeError as e:
             rospy.logerr(e)
 
@@ -285,9 +286,6 @@ class ArucoDetector():
 
         msg.header.stamp = rospy.Time.now()
         msg.header.frame_id = "map"
-
-        # Store ArUco ID in the message header
-        msg.header.seq = int(marker_id)
 
         msg.point.x = float(marker_world[0])
         msg.point.y = float(marker_world[1])
@@ -481,7 +479,20 @@ class ArucoDetector():
                 (4, 2)
             ).astype(np.float32)
 
-            pts_int = pts.astype(int)
+            frame_h, frame_w = frame.shape[:2]
+            output_h, output_w = output_frame.shape[:2]
+
+            # YOLO image is a centre crop of the raw image
+            crop_size = min(frame_w, frame_h)
+            crop_x = (frame_w - crop_size) / 2.0
+            crop_y = (frame_h - crop_size) / 2.0
+            scale_x = output_w / float(crop_size)
+            scale_y = output_h / float(crop_size)
+
+            output_pts = pts.copy()
+            output_pts[:, 0] = (output_pts[:, 0] - crop_x) * scale_x
+            output_pts[:, 1] = (output_pts[:, 1] - crop_y) * scale_y
+            pts_int = output_pts.astype(int)
 
             # Draw marker border
             cv2.polylines(
@@ -500,9 +511,17 @@ class ArucoDetector():
                 np.mean(pts[:, 1])
             )
 
+            output_cX = int(
+                (cX - crop_x) * scale_x
+            )
+
+            output_cY = int(
+                (cY - crop_y) * scale_y
+            )
+
             cv2.circle(
                 output_frame,
-                (cX, cY),
+                (output_cX, output_cY),
                 4,
                 (0, 0, 255),
                 -1
@@ -511,7 +530,7 @@ class ArucoDetector():
             cv2.putText(
                 output_frame,
                 "ID: {}".format(marker_id),
-                (cX + 8, cY - 8),
+                (output_cX + 8, output_cY - 8),
                 cv2.FONT_HERSHEY_SIMPLEX,
                 0.5,
                 (0, 255, 0),
@@ -528,23 +547,22 @@ class ArucoDetector():
                 )
                 continue
 
-            frame_h, frame_w = (
-                frame.shape[:2]
-            )
-
             camera_matrix = (
                 self.camera_matrix.copy()
             )
 
-            # Camera info is 640x480,
-            # while image stream is 416x416
-            scale_x = frame_w / 640.0
-            scale_y = frame_h / 480.0
+            output_camera_matrix = camera_matrix.copy()
 
-            camera_matrix[0, 0] *= scale_x
-            camera_matrix[1, 1] *= scale_y
-            camera_matrix[0, 2] *= scale_x
-            camera_matrix[1, 2] *= scale_y
+            output_camera_matrix[0, 0] *= scale_x
+            output_camera_matrix[1, 1] *= scale_y
+
+            output_camera_matrix[0, 2] = (
+                output_camera_matrix[0, 2] - crop_x
+            ) * scale_x
+
+            output_camera_matrix[1, 2] = (
+                output_camera_matrix[1, 2] - crop_y
+            ) * scale_y
 
             success, rvec, tvec = (
                 cv2.solvePnP(
@@ -570,7 +588,7 @@ class ArucoDetector():
             ):
                 cv2.drawFrameAxes(
                     output_frame,
-                    camera_matrix,
+                    output_camera_matrix,
                     self.dist_coeffs,
                     rvec,
                     tvec,
@@ -600,7 +618,6 @@ class ArucoDetector():
 
             if marker_world is not None:
                 self.publish_world_position(
-                    marker_id,
                     marker_world
                 )
 
@@ -637,7 +654,7 @@ class ArucoDetector():
                     "Dist: {:.2f} m".format(
                         distance
                     ),
-                    (cX + 8, cY + 15),
+                    (output_cX + 8, output_cY + 15),
                     cv2.FONT_HERSHEY_SIMPLEX,
                     0.42,
                     (0, 255, 255),
@@ -651,7 +668,7 @@ class ArucoDetector():
                         y,
                         z
                     ),
-                    (cX + 8, cY + 32),
+                    (output_cX + 8, output_cY + 32),
                     cv2.FONT_HERSHEY_SIMPLEX,
                     0.40,
                     (0, 255, 255),
