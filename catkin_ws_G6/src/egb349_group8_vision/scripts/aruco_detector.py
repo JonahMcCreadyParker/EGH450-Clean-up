@@ -286,6 +286,9 @@ class ArucoDetector():
         msg.header.stamp = rospy.Time.now()
         msg.header.frame_id = "map"
 
+        # Store ArUco ID in the message header
+        msg.header.seq = int(marker_id)
+
         msg.point.x = float(marker_world[0])
         msg.point.y = float(marker_world[1])
         msg.point.z = float(marker_world[2])
@@ -597,6 +600,7 @@ class ArucoDetector():
 
             if marker_world is not None:
                 self.publish_world_position(
+                    marker_id,
                     marker_world
                 )
 
