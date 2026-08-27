@@ -196,6 +196,10 @@ class ArucoDetector():
                     msg_in
                 )
             )
+<<<<<<< HEAD
+=======
+
+>>>>>>> 10aa92869a48ff20d100e9e0122327eb3e62f7e8
         except CvBridgeError as e:
             rospy.logerr(e)
 
@@ -333,6 +337,7 @@ class ArucoDetector():
             1
         )
 
+<<<<<<< HEAD
 
     def update_detection_log(
         self,
@@ -345,6 +350,20 @@ class ArucoDetector():
         distance
     ):
 
+=======
+
+    def update_detection_log(
+        self,
+        marker_id,
+        cX,
+        cY,
+        x,
+        y,
+        z,
+        distance
+    ):
+
+>>>>>>> 10aa92869a48ff20d100e9e0122327eb3e62f7e8
         self.detected_marker_log[int(marker_id)] = {
             "px": cX,
             "py": cY,
@@ -487,6 +506,7 @@ class ArucoDetector():
                 True,
                 (0, 255, 0),
                 2
+<<<<<<< HEAD
             )
 
             cX = int(
@@ -497,6 +517,18 @@ class ArucoDetector():
                 np.mean(pts[:, 1])
             )
 
+=======
+            )
+
+            cX = int(
+                np.mean(pts[:, 0])
+            )
+
+            cY = int(
+                np.mean(pts[:, 1])
+            )
+
+>>>>>>> 10aa92869a48ff20d100e9e0122327eb3e62f7e8
             cv2.circle(
                 output_frame,
                 (cX, cY),
@@ -528,11 +560,19 @@ class ArucoDetector():
             frame_h, frame_w = (
                 frame.shape[:2]
             )
+<<<<<<< HEAD
 
             camera_matrix = (
                 self.camera_matrix.copy()
             )
 
+=======
+
+            camera_matrix = (
+                self.camera_matrix.copy()
+            )
+
+>>>>>>> 10aa92869a48ff20d100e9e0122327eb3e62f7e8
             # Camera info is 640x480,
             # while image stream is 416x416
             scale_x = frame_w / 640.0
@@ -658,8 +698,12 @@ class ArucoDetector():
     # ROI addition for Jonah
     def publish_test_roi(
         self,
+<<<<<<< HEAD
         marker_id,
         marker_world
+=======
+        marker_id
+>>>>>>> 10aa92869a48ff20d100e9e0122327eb3e62f7e8
     ):
 
         if self.roi_triggered:
@@ -670,10 +714,17 @@ class ArucoDetector():
         roi_msg.header.stamp = rospy.Time.now()
         roi_msg.header.frame_id = "map"
 
+<<<<<<< HEAD
         # Use detected marker world position
         roi_msg.pose.position.x = float(marker_world[0])
         roi_msg.pose.position.y = float(marker_world[1])
         roi_msg.pose.position.z = 2.0
+=======
+        # Current fixed ROI test
+        roi_msg.pose.position.x = 2.0
+        roi_msg.pose.position.y = 2.0
+        roi_msg.pose.position.z = 1.5
+>>>>>>> 10aa92869a48ff20d100e9e0122327eb3e62f7e8
 
         # No rotation
         roi_msg.pose.orientation.x = 0.0
@@ -689,10 +740,15 @@ class ArucoDetector():
 
         rospy.logwarn(
             "ArUco ID {} detected - ROI diversion requested "
+<<<<<<< HEAD
             "to ({:.2f}, {:.2f}, 1.5)".format(
                 marker_id,
                 marker_world[0],
                 marker_world[1]
+=======
+            "to (2.0, 2.0, 1.5)".format(
+                marker_id
+>>>>>>> 10aa92869a48ff20d100e9e0122327eb3e62f7e8
             )
         )
 
