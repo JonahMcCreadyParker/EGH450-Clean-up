@@ -3,6 +3,7 @@
 import sys
 from math import *
 
+import subprocess
 import rospy
 import actionlib
 from actionlib_msgs.msg import GoalStatus
@@ -170,9 +171,17 @@ class Guidance():
 		# XXX: Do something?
 		rospy.sleep(rospy.Duration(10))
 
-		rospy.loginfo("Returning to flight plan...")
+		# rospy.loginfo("Returning to flight plan...")
+		# self.send_wp(rwp) 	#command for returning to original waypoint prev
 
-		self.send_wp(rwp)
+
+
+		# ----------------------------------- LANDING LOGIC AFTER DETECTION OF TARGET
+		self.trigger_landing()
+
+
+		# -----------------------------------
+
 		self.spar_client.wait_for_result()
 		if self.spar_client.get_state() != GoalStatus.SUCCEEDED:
 			# Something went wrong, cancel out of guidance!
@@ -251,6 +260,30 @@ class Guidance():
 			elif (self.spar_client.get_state() == GoalStatus.PREEMPTED) or (self.spar_client.get_state() == GoalStatus.ABORTED) or (self.spar_client.get_state() == GoalStatus.REJECTED):
 				rospy.loginfo("Mission cancelled!")
 				rospy.signal_shutdown("cancelled")
+
+
+
+def trigger_landing():
+    rospy.loginfo("[SPAR] Landing point acquired. Initiating land sequence...")
+    
+    # 1. Launch the land script from your spar package
+    # This runs land.py in a background process
+    land_process = subprocess.Popen(["rosrun", "spar", "land.py"])
+    
+    # 2. Wait a brief moment (e.g., 0.2s) for land.py to spin up and start publishing
+    rospy.sleep(15)
+    
+    # 3. Shutdown the demo_wp node safely
+    # This completely kills this script's publishers so PX4 only listens to land.py
+    rospy.signal_shutdown("[SPAR] Handing drone control over to land node.")
+
+
+
+
+
+
+
+
 
 
 def main(args):
