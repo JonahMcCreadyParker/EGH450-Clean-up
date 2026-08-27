@@ -478,6 +478,7 @@ class ArucoDetector():
                 (4, 2)
             ).astype(np.float32)
 
+            # Raw and YOLO images retain the same 16:9 geometry
             pts_int = pts.astype(int)
 
             # Draw marker border
@@ -525,23 +526,9 @@ class ArucoDetector():
                 )
                 continue
 
-            frame_h, frame_w = (
-                frame.shape[:2]
-            )
-
             camera_matrix = (
                 self.camera_matrix.copy()
             )
-
-            # Camera info is 640x480,
-            # while image stream is 416x416
-            scale_x = frame_w / 640.0
-            scale_y = frame_h / 480.0
-
-            camera_matrix[0, 0] *= scale_x
-            camera_matrix[1, 1] *= scale_y
-            camera_matrix[0, 2] *= scale_x
-            camera_matrix[1, 2] *= scale_y
 
             success, rvec, tvec = (
                 cv2.solvePnP(
