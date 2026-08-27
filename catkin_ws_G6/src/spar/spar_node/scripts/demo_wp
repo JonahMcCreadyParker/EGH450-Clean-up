@@ -12,7 +12,7 @@ from actionlib_msgs.msg import GoalStatus
 from spar_msgs.msg import FlightMotionAction, FlightMotionGoal
 
 def send_wp(spar_client, x, y, z, yaw):
-	speed = rospy.get_param("~speed", 0.5)	#deafult is 1.0
+	speed = rospy.get_param("~speed", 0.5)	#default is 1.0
 	accuracy = rospy.get_param("~accuracy", 0.1)
 
 	goal = FlightMotionGoal()
