@@ -147,6 +147,7 @@ class Guidance():
 		# Low battery landing condition
 		if percentage <= 10:
 			rospy.logwarn("Warning: battery at %.1f%%, execute landing", percentage)
+			trigger_landing()
 
 		# Print 20% warning only once
 		elif percentage <= 20 and not self.warning_20_sent:
@@ -195,7 +196,7 @@ class Guidance():
 
 
 		# ----------------------------------- LANDING LOGIC AFTER DETECTION OF TARGET
-		self.trigger_landing()
+		self.trigger_landing()    #remove self. since defined outside of guidance???
 
 
 		# -----------------------------------
