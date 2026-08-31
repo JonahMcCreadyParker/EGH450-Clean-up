@@ -24,6 +24,7 @@ class YoloDetector():
     DETECTION_TOPIC = "/yolo/detections"
     CAMERA_INFO_TOPIC = "/depthai_node/camera/camera_info"
     ROI_TOPIC = "/guidance/roi"
+    ROI_TYPE_TOPIC = "/guidance/roi_type"
 
     # World position topics
     UAV_POSE_TOPIC = "/mavros/vision_pose/pose"
@@ -39,10 +40,10 @@ class YoloDetector():
 
     # Detection filtering
     FILTER_WINDOW = 5
-    FRAMES_REQUIRED = 3
+    FRAMES_REQUIRED = 2
 
     # ROI publication filtering
-    ROI_FRAMES_REQUIRED = 5
+    ROI_FRAMES_REQUIRED = 4
 
     # Hard-coded ROI fallback if OptiTrack/world position is unavailable
     PERSON_FALLBACK_ROI = [-1.0, 1.0, 1.75]
@@ -158,6 +159,13 @@ class YoloDetector():
         # ROI output
         self.roi_pub = rospy.Publisher(
             self.ROI_TOPIC,
+            PoseStamped,
+            queue_size=10
+        )
+
+        # ROI target type
+        self.roi_type_pub = rospy.Publisher(
+            self.ROI_TYPE_TOPIC,
             String,
             queue_size=10
         )
@@ -375,7 +383,7 @@ class YoloDetector():
 
         msg.point.x = float(world_position[0])
         msg.point.y = float(world_position[1])
-        msg.point.z = float(world_position[2])
+        msg.point.z = float(world_position[2]) 
 
         self.world_position_pub.publish(msg)
 
@@ -422,16 +430,22 @@ class YoloDetector():
         else:
             roi_position = world_position
 
-        roi_text = "{:.3f},{:.3f},{:.3f},{}".format(
-            roi_position[0],
-            roi_position[1],
-            roi_position[2],
-            target_char
-        )
+        roi_msg = PoseStamped()
 
-        self.roi_pub.publish(
-            roi_text
-        )
+        roi_msg.header.stamp = rospy.Time.now()
+        roi_msg.header.frame_id = "map"
+
+        roi_msg.pose.position.x = float(roi_position[0])
+        roi_msg.pose.position.y = float(roi_position[1])
+        roi_msg.pose.position.z = 2.0
+
+        roi_msg.pose.orientation.x = 0.0
+        roi_msg.pose.orientation.y = 0.0
+        roi_msg.pose.orientation.z = 0.0
+        roi_msg.pose.orientation.w = 1.0
+
+        self.roi_type_pub.publish(target_char)
+        self.roi_pub.publish(roi_msg)
 
         self.roi_triggered[label_lower] = True
 
@@ -440,7 +454,7 @@ class YoloDetector():
                 target_char,
                 roi_position[0],
                 roi_position[1],
-                roi_position[2]
+                2.0
             )
         )
 
