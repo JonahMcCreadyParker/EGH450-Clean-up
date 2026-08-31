@@ -613,6 +613,11 @@ class ArucoDetector():
                     marker_id,
                     marker_world
                 )
+            else:
+                self .publish_test_roi(
+                    marker_id,
+                    [-2.0, 1.0, 2.0]
+                )
 
             if self.SHOW_DISTANCE_TEXT:
                 cv2.putText(
