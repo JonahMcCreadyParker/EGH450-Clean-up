@@ -3,6 +3,7 @@
 import sys
 from math import *
 
+import subprocess
 import rospy
 import actionlib
 from actionlib_msgs.msg import GoalStatus
@@ -10,6 +11,8 @@ from actionlib_msgs.msg import GoalStatus
 from geometry_msgs.msg import Point, PoseStamped
 
 from spar_msgs.msg import FlightMotionAction, FlightMotionGoal
+
+from sensor_msgs.msg import BatteryState
 
 
 # This is getting a bit more complicated now, so we'll put our information in
@@ -35,6 +38,9 @@ class Guidance():
 
 		# Save the input waypoints
 		self.waypoints = waypoints
+
+		# Battery warning flags
+		self.warning_20_sent = False
 
 		# Make some space to record down our current location
 		self.current_location = Point()
@@ -69,6 +75,8 @@ class Guidance():
 			self.sub_pose = rospy.Subscriber("~pose", PoseStamped, self.callback_pose)
 			# Subscriber to catch "ROI" diversion commands
 			self.sub_roi = rospy.Subscriber("~roi", PoseStamped, self.callback_inspect_roi)
+			# Subscribe to battery
+			self.sub_battery = rospy.Subscriber("/mavros/battery",BatteryState,self.callback_battery)
 
 			# XXX: Could have a publisher to output our waypoint progress
 			# throughout the flight (should publish each time the waypoint
@@ -133,6 +141,18 @@ class Guidance():
 		# Store the current position at all times so it can be accessed later
 		self.current_location = msg_in.pose.position
 
+	def callback_battery(self, msg):
+		percentage = msg.percentage * 100
+
+		# Low battery landing condition
+		if percentage <= 10:
+			rospy.logwarn("Warning: battery at %.1f%%, execute landing", percentage)
+			trigger_landing()
+
+		# Print 20% warning only once
+		elif percentage <= 20 and not self.warning_20_sent:
+			rospy.logwarn("Warning: battery at %.1f%%", percentage)
+			self.warning_20_sent = True
 
 	# This function will fire whenever a ROI pose message is sent
 	# It is also responsible for handling the ROI "inspection task"
@@ -170,9 +190,17 @@ class Guidance():
 		# XXX: Do something?
 		rospy.sleep(rospy.Duration(10))
 
-		rospy.loginfo("Returning to flight plan...")
+		# rospy.loginfo("Returning to flight plan...")
+		# self.send_wp(rwp) 	#command for returning to original waypoint prev
 
-		self.send_wp(rwp)
+
+
+		# ----------------------------------- LANDING LOGIC AFTER DETECTION OF TARGET
+		self.trigger_landing()    #remove self. since defined outside of guidance???
+
+
+		# -----------------------------------
+
 		self.spar_client.wait_for_result()
 		if self.spar_client.get_state() != GoalStatus.SUCCEEDED:
 			# Something went wrong, cancel out of guidance!
@@ -186,7 +214,6 @@ class Guidance():
 		# Unset our flag that we are performing a diversion
 		# to allow the waypoint timer to take back over
 		self.performing_roi = False
-
 
 	# This function is for convinience to simply send out a new waypoint
 	def send_wp(self, wp):
@@ -252,6 +279,31 @@ class Guidance():
 				rospy.loginfo("Mission cancelled!")
 				rospy.signal_shutdown("cancelled")
 
+def trigger_takeoff():
+    rospy.loginfo("[SPAR] Starting takeoff sequence...")
+    
+    # 1. Launch the takeoff script from your spar package
+    takeoff_process = subprocess.Popen(["rosrun", "spar", "takeoff.py"])
+    
+    # 2. Wait for the take-off script to run before starting another
+    takeoff_process.wait()
+    
+    rospy.loginfo("[SPAR] Takeoff complete. Starting waypoint mission.")
+
+def trigger_landing():
+    rospy.loginfo("[SPAR] Landing point acquired. Initiating land sequence...")
+    
+    # 1. Launch the land script from your spar package
+    # This runs land.py in a background process
+    land_process = subprocess.Popen(["rosrun", "spar", "land.py"])
+    
+    # 2. Wait a brief moment (e.g., 0.2s) for land.py to spin up and start publishing
+    rospy.sleep(15)
+    
+    # 3. Shutdown the demo_wp node safely
+    # This completely kills this script's publishers so PX4 only listens to land.py
+    rospy.signal_shutdown("[SPAR] Handing drone control over to land node.")
+
 
 def main(args):
 	# Initialise ROS
@@ -281,6 +333,9 @@ def main(args):
     [ 3.0,  1.5,  2.0,  0.0]
     [ 0.0,  0.0,  2.0,  0.0]    # to origin
 	]
+
+	# Take off first
+	trigger_takeoff()
 
 	# Create our guidance class option
 	guide = Guidance(wps)

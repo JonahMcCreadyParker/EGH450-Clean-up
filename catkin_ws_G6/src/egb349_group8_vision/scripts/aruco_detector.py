@@ -196,6 +196,7 @@ class ArucoDetector():
                     msg_in
                 )
             )
+
         except CvBridgeError as e:
             rospy.logerr(e)
 
@@ -498,9 +499,17 @@ class ArucoDetector():
                 np.mean(pts[:, 1])
             )
 
+            output_cX = int(
+                (cX - crop_x) * scale_x
+            )
+
+            output_cY = int(
+                (cY - crop_y) * scale_y
+            )
+
             cv2.circle(
                 output_frame,
-                (cX, cY),
+                (output_cX, output_cY),
                 4,
                 (0, 0, 255),
                 -1
@@ -509,7 +518,7 @@ class ArucoDetector():
             cv2.putText(
                 output_frame,
                 "ID: {}".format(marker_id),
-                (cX + 8, cY - 8),
+                (output_cX + 8, output_cY - 8),
                 cv2.FONT_HERSHEY_SIMPLEX,
                 0.5,
                 (0, 255, 0),
@@ -554,7 +563,7 @@ class ArucoDetector():
             ):
                 cv2.drawFrameAxes(
                     output_frame,
-                    camera_matrix,
+                    output_camera_matrix,
                     self.dist_coeffs,
                     rvec,
                     tvec,
@@ -625,7 +634,7 @@ class ArucoDetector():
                     "Dist: {:.2f} m".format(
                         distance
                     ),
-                    (cX + 8, cY + 15),
+                    (output_cX + 8, output_cY + 15),
                     cv2.FONT_HERSHEY_SIMPLEX,
                     0.42,
                     (0, 255, 255),
@@ -639,7 +648,7 @@ class ArucoDetector():
                         y,
                         z
                     ),
-                    (cX + 8, cY + 32),
+                    (output_cX + 8, output_cY + 32),
                     cv2.FONT_HERSHEY_SIMPLEX,
                     0.40,
                     (0, 255, 255),
