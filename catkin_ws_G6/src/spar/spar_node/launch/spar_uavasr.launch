@@ -14,6 +14,16 @@
 
 	<!-- Emulator Node -->
 	<node pkg="uavasr_emulator" type="uavasr_emulator_node" name="uavasr" clear_params="true" output="screen">
+		
+		<!-- Linear and yaw motion velocities -->
+		<param name="vel_linear" type="double" value="4.0" />
+		<param name="vel_yaw" type="double" value="0.2" />
+
+		<!-- Position and yaw waypoint accuracies -->
+		<param name="acc_pos" type="double" value="0.1" />
+		<param name="acc_yaw" type="double" value="0.1" />
+		
+		
 		<!-- Operational Parameters -->
 		<param name="frame_id" value="map" type="str"/>
 		<param name="model_id" value="$(arg uav_name)" type="str"/>

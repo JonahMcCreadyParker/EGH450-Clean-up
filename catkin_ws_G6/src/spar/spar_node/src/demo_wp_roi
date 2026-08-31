@@ -42,10 +42,14 @@ class Guidance():
 		# Battery warning flags
 		self.warning_20_sent = False
 
+		# Prevent landing from being triggered more than once
+		self.landing_triggered = False
+
+		
 		# Make some space to record down our current location
 		self.current_location = Point()
 		# Set our linear and rotational velocities for the flight
-		self.vel_linear = rospy.get_param("~vel_linear", 0.1) #default is 0.2
+		self.vel_linear = rospy.get_param("~vel_linear", 0.2) #default is 0.2
 		self.vel_yaw = rospy.get_param("~vel_yaw", 0.2)
 		# Set our position and yaw waypoint accuracies
 		self.accuracy_pos = rospy.get_param("~acc_pos", 0.1)
@@ -87,6 +91,7 @@ class Guidance():
 			# If shutdown is issued (eg. CTRL+C), cancel current
 	 		# mission before rospy is shutdown.
 			rospy.on_shutdown( lambda : self.shutdown() )
+
 
 	# This function will check if a list of waypoints is in the format we expect
 	def check_waypoints(self, wps):
@@ -145,9 +150,35 @@ class Guidance():
 		percentage = msg.percentage * 100
 
 		# Low battery landing condition
-		if percentage <= 10:
-			rospy.logwarn("Warning: battery at %.1f%%, execute landing", percentage)
+		# if percentage <= 10:
+		# 	rospy.logwarn("Warning: battery at %.1f%%, execute landing", percentage)
+		# 	trigger_landing()
+# ------------------------------------------------
+		if percentage <= 10 and not self.landing_triggered:
+			rospy.logwarn( "Warning: battery at %.1f%%, initiating landing", percentage)
+
+			# Prevent another landing command
+			self.landing_triggered = True
+
+			# Stop normal waypoint handling
+			self.performing_roi = True
+
+			# Stop checking waypoint progression
+			self.timer.shutdown()
+
+			# Cancel the currently active waypoint
+			self.spar_client.cancel_goal()
+
+			# Hand control over to land.py
 			trigger_landing()
+
+			# Landing is complete, shut down guidance node
+			rospy.signal_shutdown("Low battery landing complete")
+# ------------------------------------------------
+
+
+
+
 
 		# Print 20% warning only once
 		elif percentage <= 20 and not self.warning_20_sent:
@@ -190,16 +221,9 @@ class Guidance():
 		# XXX: Do something?
 		rospy.sleep(rospy.Duration(10))
 
-		# rospy.loginfo("Returning to flight plan...")
-		# self.send_wp(rwp) 	#command for returning to original waypoint prev
+		rospy.loginfo("Returning to flight plan...")
+		self.send_wp(rwp) 	#command for returning to original waypoint prev
 
-
-
-		# ----------------------------------- LANDING LOGIC AFTER DETECTION OF TARGET
-		self.trigger_landing()    #remove self. since defined outside of guidance???
-
-
-		# -----------------------------------
 
 		self.spar_client.wait_for_result()
 		if self.spar_client.get_state() != GoalStatus.SUCCEEDED:
@@ -270,11 +294,23 @@ class Guidance():
 					# Increment our waypoint counter
 					self.waypoint_counter += 1
 				else:
-					# Else the mission is over, shutdown and quit the node
-					# XXX:	This could be used to restart the mission back to the
-					#		first waypoint instead to restart the mission
-					rospy.loginfo("Mission complete!")
-					rospy.signal_shutdown("complete")
+					rospy.loginfo("Final waypoint reached. Initiating landing...")
+
+					# Prevent any other landing requests
+					self.landing_triggered = True
+
+					# Prevent waypoint/ROI commands from interfering
+					self.performing_roi = True
+
+					# Stop waypoint status checks
+					self.timer.shutdown()
+
+					# Begin autonomous landing
+					trigger_landing()
+
+					# Shutdown guidance once landing has finished
+					rospy.signal_shutdown("Mission and landing complete")
+
 			elif (self.spar_client.get_state() == GoalStatus.PREEMPTED) or (self.spar_client.get_state() == GoalStatus.ABORTED) or (self.spar_client.get_state() == GoalStatus.REJECTED):
 				rospy.loginfo("Mission cancelled!")
 				rospy.signal_shutdown("cancelled")
@@ -283,7 +319,7 @@ def trigger_takeoff():
     rospy.loginfo("[SPAR] Starting takeoff sequence...")
     
     # 1. Launch the takeoff script from your spar package
-    takeoff_process = subprocess.Popen(["rosrun", "spar", "takeoff.py"])
+    takeoff_process = subprocess.Popen(["rosrun", "spar_node", "takeoff.py"])
     
     # 2. Wait for the take-off script to run before starting another
     takeoff_process.wait()
@@ -295,14 +331,14 @@ def trigger_landing():
     
     # 1. Launch the land script from your spar package
     # This runs land.py in a background process
-    land_process = subprocess.Popen(["rosrun", "spar", "land.py"])
+    land_process = subprocess.Popen(["rosrun", "spar_node", "land.py"])
     
     # 2. Wait a brief moment (e.g., 0.2s) for land.py to spin up and start publishing
-    rospy.sleep(15)
+    land_process.wait()
     
     # 3. Shutdown the demo_wp node safely
     # This completely kills this script's publishers so PX4 only listens to land.py
-    rospy.signal_shutdown("[SPAR] Handing drone control over to land node.")
+    rospy.loginfo("[SPAR] Landing complete. Hand over to manual control for shutdown.")
 
 
 def main(args):
@@ -314,31 +350,32 @@ def main(args):
 	# [X, Y, Z, Yaw]
 		
 	wps = [
-    [ 0.0,  0.0,  2.0,  0.0],   # from origin
-    [ 3.0, -2.0,  2.0,  0.0],
-    [-3.0, -2.0,  2.0,  0.0],
-    [-3.0, -1.5,  2.0,  0.0],
-    [ 3.0, -1.5,  2.0,  0.0],
-    [ 3.0, -1.0,  2.0,  0.0],
-    [-3.0, -1.0,  2.0,  0.0],
-    [-3.0, -0.5,  2.0,  0.0],
-    [ 3.0, -0.5,  2.0,  0.0],
-    [ 3.0,  0.0,  2.0,  0.0],
-    [-3.0,  0.0,  2.0,  0.0],
-    [-3.0,  0.5,  2.0,  0.0],
-    [ 3.0,  0.5,  2.0,  0.0],
-    [ 3.0,  1.0,  2.0,  0.0],
-    [-3.0,  1.0,  2.0,  0.0],
-    [-3.0,  1.5,  2.0,  0.0],
-    [ 3.0,  1.5,  2.0,  0.0]
-    [ 0.0,  0.0,  2.0,  0.0]    # to origin
-	]
+		[ 0.0,  0.0,  2.0,  0.0],   # from origin
+		[ 3.0, -2.0,  2.0,  0.0],
+		[-3.0, -2.0,  2.0,  0.0],
+		[-3.0, -1.5,  2.0,  0.0],
+		[ 3.0, -1.5,  2.0,  0.0],
+		[ 3.0, -1.0,  2.0,  0.0],
+		[-3.0, -1.0,  2.0,  0.0],
+		[-3.0, -0.5,  2.0,  0.0],
+		[ 3.0, -0.5,  2.0,  0.0],
+		[ 3.0,  0.0,  2.0,  0.0],
+		[-3.0,  0.0,  2.0,  0.0],
+		[-3.0,  0.5,  2.0,  0.0],
+		[ 3.0,  0.5,  2.0,  0.0],
+		[ 3.0,  1.0,  2.0,  0.0],
+		[-3.0,  1.0,  2.0,  0.0],
+		[-3.0,  1.5,  2.0,  0.0],
+		[ 3.0,  1.5,  2.0,  0.0],
+		[ 0.0,  0.0,  2.0,  0.0]    # to origin
+		]
 
 	# Take off first
 	trigger_takeoff()
 
 	# Create our guidance class option
-	guide = Guidance(wps)
+	Guidance(wps)
+
 
 	# Spin!
 	rospy.spin()

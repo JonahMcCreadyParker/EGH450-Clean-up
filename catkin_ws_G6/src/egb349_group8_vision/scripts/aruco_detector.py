@@ -58,6 +58,14 @@ class ArucoDetector():
 
         self.uav_pose = None
 
+        # ArUco marker used as landing target
+        self.landing_aruco_id = int(
+            rospy.get_param(
+                "~landing_aruco_id",
+                6
+            )
+        )
+
         # Latest raw and YOLO images
         self.latest_raw_frame = None
 
@@ -138,7 +146,7 @@ class ArucoDetector():
         # ROI
         self.roi_pub = rospy.Publisher(
             self.ROI_TOPIC,
-            PoseStamped,
+            String,
             queue_size=1
         )
 
@@ -165,6 +173,11 @@ class ArucoDetector():
         rospy.loginfo(
             "Output: {}".format(
                 self.OUTPUT_TOPIC
+            )
+        )
+        rospy.loginfo(
+            "Landing ArUco ID: {}".format(
+                self.landing_aruco_id
             )
         )
 
@@ -499,13 +512,9 @@ class ArucoDetector():
                 np.mean(pts[:, 1])
             )
 
-            output_cX = int(
-                (cX - crop_x) * scale_x
-            )
-
-            output_cY = int(
-                (cY - crop_y) * scale_y
-            )
+            # Full-FOV raw and output images use the same coordinates
+            output_cX = cX
+            output_cY = cY
 
             cv2.circle(
                 output_frame,
@@ -563,7 +572,7 @@ class ArucoDetector():
             ):
                 cv2.drawFrameAxes(
                     output_frame,
-                    output_camera_matrix,
+                    camera_matrix,
                     self.dist_coeffs,
                     rvec,
                     tvec,
@@ -617,16 +626,19 @@ class ArucoDetector():
                 distance
             )
 
-            if marker_world is not None:
-                self.publish_test_roi(
-                    marker_id,
-                    marker_world
-                )
-            else:
-                self .publish_test_roi(
-                    marker_id,
-                    [-2.0, 1.0, 2.0]
-                )
+            # Only selected ArUco ID triggers landing ROI
+            if int(marker_id) == self.landing_aruco_id:
+
+                if marker_world is not None:
+                    self.publish_test_roi(
+                        marker_id,
+                        marker_world
+                    )
+                else:
+                    self.publish_test_roi(
+                        marker_id,
+                        [-2.0, 1.0, 2.0]
+                    )
 
             if self.SHOW_DISTANCE_TEXT:
                 cv2.putText(
@@ -666,24 +678,14 @@ class ArucoDetector():
         if self.roi_triggered:
             return
 
-        roi_msg = PoseStamped()
-
-        roi_msg.header.stamp = rospy.Time.now()
-        roi_msg.header.frame_id = "map"
-
-        # Use detected marker world position
-        roi_msg.pose.position.x = float(marker_world[0])
-        roi_msg.pose.position.y = float(marker_world[1])
-        roi_msg.pose.position.z = 1.5
-
-        # No rotation
-        roi_msg.pose.orientation.x = 0.0
-        roi_msg.pose.orientation.y = 0.0
-        roi_msg.pose.orientation.z = 0.0
-        roi_msg.pose.orientation.w = 1.0
+        roi_text = "{:.3f},{:.3f},{:.3f},A".format(
+            marker_world[0],
+            marker_world[1],
+            2.0
+        )
 
         self.roi_pub.publish(
-            roi_msg
+            roi_text
         )
 
         self.roi_triggered = True

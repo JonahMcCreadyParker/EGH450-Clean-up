@@ -1,4 +1,8 @@
 <launch>
+
+    <!-- Default landing ArUco ID -->
+    <arg name="landing_aruco_id" default="6" />
+
     <node
         pkg="depthai_publisher"
         type="dai_yolo_publisher"
@@ -8,15 +12,15 @@
 
         <param
             name="blob_path"
-            value="/home/uavteam6/EGB349_Project_eldrone/models/UAS_SAR_v6_RVC2/UAS_SAR_v6_RVC2.blob"
+            value="/home/uavteam6/EGB349_Project_eldrone/models/UAS_SAR_v13_RVC2/UAS_SAR_v13_RVC2.blob"
         />
 
         <param
             name="config_path"
-            value="/home/uavteam6/EGB349_Project_eldrone/models/UAS_SAR_v6_RVC2/UAS_SAR_v6_RVC2.json"
+            value="/home/uavteam6/EGB349_Project_eldrone/models/UAS_SAR_v13_RVC2/UAS_SAR_v13_RVC2.json"
         />
 
-        <param name="confidence" value="0.80" />
+        <param name="confidence" value="0.90" />
         <param name="iou" value="0.50" />
         <param name="camera_fps" value="15.0" />
         <param name="jpeg_quality" value="85" />
@@ -45,6 +49,7 @@
             name="enable_world_position"
             value="true"
         />
+
     </node>
 
     <node
@@ -52,6 +57,13 @@
         type="aruco_detector.py"
         name="aruco_detector"
         output="screen"
-        respawn="false"
-    />
+        respawn="false">
+
+        <param
+            name="landing_aruco_id"
+            value="$(arg landing_aruco_id)"
+        />
+
+    </node>
+
 </launch>
