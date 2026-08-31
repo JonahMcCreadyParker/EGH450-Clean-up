@@ -479,20 +479,8 @@ class ArucoDetector():
                 (4, 2)
             ).astype(np.float32)
 
-            frame_h, frame_w = frame.shape[:2]
-            output_h, output_w = output_frame.shape[:2]
-
-            # YOLO image is a centre crop of the raw image
-            crop_size = min(frame_w, frame_h)
-            crop_x = (frame_w - crop_size) / 2.0
-            crop_y = (frame_h - crop_size) / 2.0
-            scale_x = output_w / float(crop_size)
-            scale_y = output_h / float(crop_size)
-
-            output_pts = pts.copy()
-            output_pts[:, 0] = (output_pts[:, 0] - crop_x) * scale_x
-            output_pts[:, 1] = (output_pts[:, 1] - crop_y) * scale_y
-            pts_int = output_pts.astype(int)
+            # Raw and YOLO images retain the same 16:9 geometry
+            pts_int = pts.astype(int)
 
             # Draw marker border
             cv2.polylines(
@@ -550,19 +538,6 @@ class ArucoDetector():
             camera_matrix = (
                 self.camera_matrix.copy()
             )
-
-            output_camera_matrix = camera_matrix.copy()
-
-            output_camera_matrix[0, 0] *= scale_x
-            output_camera_matrix[1, 1] *= scale_y
-
-            output_camera_matrix[0, 2] = (
-                output_camera_matrix[0, 2] - crop_x
-            ) * scale_x
-
-            output_camera_matrix[1, 2] = (
-                output_camera_matrix[1, 2] - crop_y
-            ) * scale_y
 
             success, rvec, tvec = (
                 cv2.solvePnP(
@@ -646,6 +621,11 @@ class ArucoDetector():
                 self.publish_test_roi(
                     marker_id,
                     marker_world
+                )
+            else:
+                self .publish_test_roi(
+                    marker_id,
+                    [-2.0, 1.0, 2.0]
                 )
 
             if self.SHOW_DISTANCE_TEXT:

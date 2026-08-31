@@ -210,8 +210,8 @@ class YoloDetector():
             dai.ColorCameraProperties.SensorResolution.THE_1080_P
         )
         camera.setPreviewSize(
-            self.input_width,
-            self.input_height
+            self.RAW_WIDTH,
+            self.RAW_HEIGHT
         )
         camera.setPreviewKeepAspectRatio(True)
         camera.setInterleaved(False)
@@ -219,6 +219,17 @@ class YoloDetector():
             dai.ColorCameraProperties.ColorOrder.BGR
         )
         camera.setFps(self.camera_fps)
+
+        # Letterbox the full 16:9 image for the square YOLO input
+        yolo_manip = pipeline.create(dai.node.ImageManip)
+        yolo_manip.initialConfig.setResizeThumbnail(
+            self.input_width,
+            self.input_height
+        )
+        yolo_manip.initialConfig.setFrameType(
+            dai.ImgFrame.Type.BGR888p
+        )
+        camera.preview.link(yolo_manip.inputImage)
 
         # YOLO runs directly on the OAK-D Myriad X
         yolo = pipeline.create(dai.node.YoloDetectionNetwork)
@@ -232,25 +243,12 @@ class YoloDetector():
         yolo.input.setBlocking(False)
         yolo.input.setQueueSize(1)
 
-        camera.preview.link(yolo.input)
+        yolo_manip.out.link(yolo.input)
 
-        # Resize raw image to 640x360 without changing aspect ratio
-        raw_manip = pipeline.create(dai.node.ImageManip)
-        raw_manip.initialConfig.setResize(
-            self.RAW_WIDTH,
-            self.RAW_HEIGHT
-        )
-        camera.isp.link(raw_manip.inputImage)
-
-        # Send aspect-correct raw camera image back to the Pi
+        # Send the full aspect-correct camera image back to the Pi
         raw_output = pipeline.create(dai.node.XLinkOut)
         raw_output.setStreamName("raw_frames")
-        raw_manip.out.link(raw_output.input)
-
-        # Send YOLO input image back to the Pi
-        image_output = pipeline.create(dai.node.XLinkOut)
-        image_output.setStreamName("frames")
-        yolo.passthrough.link(image_output.input)
+        camera.preview.link(raw_output.input)
 
         # Send YOLO detections back to the Pi
         detection_output = pipeline.create(dai.node.XLinkOut)
@@ -268,25 +266,10 @@ class YoloDetector():
         if self.uav_pose is None or self.camera_matrix is None:
             return None
 
-        camera_matrix = self.camera_matrix.copy()
-
-        # YOLO preview is a centre crop of the 640x360 raw image
-        crop_size = min(self.RAW_WIDTH, self.RAW_HEIGHT)
-        crop_x = (self.RAW_WIDTH - crop_size) / 2.0
-        crop_y = (self.RAW_HEIGHT - crop_size) / 2.0
-
-        scale_x = frame_width / float(crop_size)
-        scale_y = frame_height / float(crop_size)
-
-        camera_matrix[0, 0] *= scale_x
-        camera_matrix[1, 1] *= scale_y
-        camera_matrix[0, 2] = (camera_matrix[0, 2] - crop_x) * scale_x
-        camera_matrix[1, 2] = (camera_matrix[1, 2] - crop_y) * scale_y
-
-        fx = camera_matrix[0, 0]
-        fy = camera_matrix[1, 1]
-        cx = camera_matrix[0, 2]
-        cy = camera_matrix[1, 2]
+        fx = self.camera_matrix[0, 0]
+        fy = self.camera_matrix[1, 1]
+        cx = self.camera_matrix[0, 2]
+        cy = self.camera_matrix[1, 2]
 
         # Detection centre pixel to camera ray
         ray_camera = np.array([
@@ -362,15 +345,42 @@ class YoloDetector():
 
 
     def draw_detections(self, frame, detections):
-        # Draw YOLO detections onto the image
+        # Draw YOLO detections onto the full aspect-correct image
         height, width = frame.shape[:2]
         detection_log = []
 
+        # YOLO receives a letterboxed version of the full camera image
+        scale = min(
+            self.input_width / float(width),
+            self.input_height / float(height)
+        )
+
+        resized_width = int(round(width * scale))
+        resized_height = int(round(height * scale))
+
+        pad_x = (self.input_width - resized_width) / 2.0
+        pad_y = (self.input_height - resized_height) / 2.0
+
         for detection in detections:
-            x1 = int(detection.xmin * width)
-            y1 = int(detection.ymin * height)
-            x2 = int(detection.xmax * width)
-            y2 = int(detection.ymax * height)
+            # Detection coordinates are relative to the 416x416 letterboxed image
+            nn_x1 = detection.xmin * self.input_width
+            nn_y1 = detection.ymin * self.input_height
+            nn_x2 = detection.xmax * self.input_width
+            nn_y2 = detection.ymax * self.input_height
+
+            # Remove letterbox padding and map back to the full raw image
+            x1 = int((nn_x1 - pad_x) / scale)
+            y1 = int((nn_y1 - pad_y) / scale)
+            x2 = int((nn_x2 - pad_x) / scale)
+            y2 = int((nn_y2 - pad_y) / scale)
+
+            x1 = max(0, min(width - 1, x1))
+            y1 = max(0, min(height - 1, y1))
+            x2 = max(0, min(width - 1, x2))
+            y2 = max(0, min(height - 1, y2))
+
+            if x2 <= x1 or y2 <= y1:
+                continue
 
             class_id = int(detection.label)
             confidence = float(detection.confidence)
@@ -380,7 +390,7 @@ class YoloDetector():
             else:
                 label = "Unknown"
 
-            # Centre of detected object
+            # Centre of detected object in the full raw image
             cX = (x1 + x2) // 2
             cY = (y1 + y2) // 2
 
@@ -510,12 +520,6 @@ class YoloDetector():
                 blocking=False
             )
 
-            frame_queue = device.getOutputQueue(
-                "frames",
-                maxSize=1,
-                blocking=False
-            )
-
             detection_queue = device.getOutputQueue(
                 "detections",
                 maxSize=1,
@@ -531,10 +535,9 @@ class YoloDetector():
 
             while not rospy.is_shutdown():
                 raw_frame = raw_frame_queue.get().getCvFrame()
-                frame = frame_queue.get().getCvFrame()
                 detections = detection_queue.get().detections
 
-                processed_frame = frame.copy()
+                processed_frame = raw_frame.copy()
 
                 detection_log = self.draw_detections(
                     processed_frame,
