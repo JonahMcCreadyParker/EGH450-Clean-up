@@ -14,6 +14,8 @@
 
 		<!-- Remappings -->
 		<remap from="~/pose" to="uavasr/pose" />
+		<!-- This should fix it, Just uncomment the below and comment the above - From Taj-->
+		<!--remap from="~pose" to="/mavros/local_position/pose" /-->
 		<!--remap from="~/roi" to="target_detection/roi" /-->
 	</node>
 </launch>
