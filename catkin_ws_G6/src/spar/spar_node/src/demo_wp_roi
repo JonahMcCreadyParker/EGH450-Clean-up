@@ -14,6 +14,7 @@ from spar_msgs.msg import FlightMotionAction, FlightMotionGoal
 
 from sensor_msgs.msg import BatteryState
 
+from std_msgs.msg import String, Bool
 
 # This is getting a bit more complicated now, so we'll put our information in
 # a class to keep track of all of our variables. This is not so much different
@@ -79,8 +80,16 @@ class Guidance():
 			self.sub_pose = rospy.Subscriber("~pose", PoseStamped, self.callback_pose)
 			# Subscriber to catch "ROI" diversion commands
 			self.sub_roi = rospy.Subscriber("~roi", PoseStamped, self.callback_inspect_roi)
+			# su
+
 			# Subscribe to battery
 			self.sub_battery = rospy.Subscriber("/mavros/battery",BatteryState,self.callback_battery)
+
+			# Publisher used to tell payload_driver which payload to deploy
+			self.pub_payload = rospy.Publisher("/payload/nav_clearance",String,queue_size=10)
+
+			# Listen for confirmation that deployment occurred
+			self.sub_payload_confirm = rospy.Subscriber("/payload/deploy_confirmation",Bool,self.callback_payload_confirmation)
 
 			# XXX: Could have a publisher to output our waypoint progress
 			# throughout the flight (should publish each time the waypoint
@@ -140,7 +149,6 @@ class Guidance():
 
 		rospy.loginfo("Guidance stopped")
 
-
 	# This function will check receive the current pose of the UAV constantly
 	def callback_pose(self, msg_in):
 		# Store the current position at all times so it can be accessed later
@@ -174,16 +182,25 @@ class Guidance():
 
 			# Landing is complete, shut down guidance node
 			rospy.signal_shutdown("Low battery landing complete")
-# ------------------------------------------------
-
-
-
-
 
 		# Print 20% warning only once
 		elif percentage <= 20 and not self.warning_20_sent:
 			rospy.logwarn("Warning: battery at %.1f%%", percentage)
 			self.warning_20_sent = True
+
+	def deploy_payload(self, payload):
+
+		if payload not in ['T', 'E']:
+			rospy.logwarn("Invalid payload command: %s", payload)
+			return
+        	
+		rospy.loginfo("Requesting deployment of payload %s", payload)
+
+		self.pub_payload.publish(payload)
+
+	def callback_payload_confirmation(self, msg):
+		if msg.data:
+			rospy.loginfo("Payload deployment confirmed")
 
 	# This function will fire whenever a ROI pose message is sent
 	# It is also responsible for handling the ROI "inspection task"
@@ -219,6 +236,25 @@ class Guidance():
 
 		rospy.loginfo("Reached diversion ROI!")
 		# XXX: Do something?
+		# payload 
+
+		# hovering???? confirm if it lowers 
+		rospy.sleep(rospy.Duration(5))
+
+
+		# if B: 
+		# 	rospy.loginfo("Backpack detected - deploying tracker")
+		# 	self.deploy_payload("T")
+		# 	#wait till done 
+		# 	self.callback_payload_confirmation('T') = True
+		# elif H: 
+		# 	rospy.loginfo("Human detected - deploying EpiPen")
+		# 	self.deploy_payload("E")
+		# else:
+		# 	rospy.logwarn("Target type invalid, payload not deployed")
+
+		# send confimation
+
 		rospy.sleep(rospy.Duration(10))
 
 		rospy.loginfo("Returning to flight plan...")
