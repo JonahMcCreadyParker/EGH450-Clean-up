@@ -1,7 +1,7 @@
 <launch>
 
     <!-- Default landing ArUco ID -->
-    <arg name="landing_aruco_id" default="6" />
+    <arg name="landing_aruco_id" default="16" />
 
     <node
         pkg="depthai_publisher"

@@ -24,6 +24,7 @@ class ArucoDetector():
     POSE_LOG_TOPIC = "/aruco/pose_log"
     RVIZ_LOG_TOPIC = "/aruco/detection_log_text"
     ROI_TOPIC = "/guidance/roi"
+    ROI_TYPE_TOPIC = "/guidance/roi_type"
 
     # OptiTrack localisation
     UAV_POSE_TOPIC = "/mavros/vision_pose/pose"
@@ -146,6 +147,13 @@ class ArucoDetector():
         # ROI
         self.roi_pub = rospy.Publisher(
             self.ROI_TOPIC,
+            PoseStamped,
+            queue_size=1
+        )
+
+        # ROI target type
+        self.roi_type_pub = rospy.Publisher(
+            self.ROI_TYPE_TOPIC,
             String,
             queue_size=1
         )
@@ -678,21 +686,28 @@ class ArucoDetector():
         if self.roi_triggered:
             return
 
-        roi_text = "{:.3f},{:.3f},{:.3f},A".format(
-            marker_world[0],
-            marker_world[1],
-            2.0
-        )
+        roi_msg = PoseStamped()
 
-        self.roi_pub.publish(
-            roi_text
-        )
+        roi_msg.header.stamp = rospy.Time.now()
+        roi_msg.header.frame_id = "map"
+
+        roi_msg.pose.position.x = float(marker_world[0])
+        roi_msg.pose.position.y = float(marker_world[1])
+        roi_msg.pose.position.z = 2.0
+
+        roi_msg.pose.orientation.x = 0.0
+        roi_msg.pose.orientation.y = 0.0
+        roi_msg.pose.orientation.z = 0.0
+        roi_msg.pose.orientation.w = 1.0
+
+        self.roi_type_pub.publish("A")
+        self.roi_pub.publish(roi_msg)
 
         self.roi_triggered = True
 
         rospy.logwarn(
             "ArUco ID {} detected - ROI diversion requested "
-            "to ({:.2f}, {:.2f}, 1.5)".format(
+            "to ({:.2f}, {:.2f}, 2.0)".format(
                 marker_id,
                 marker_world[0],
                 marker_world[1]

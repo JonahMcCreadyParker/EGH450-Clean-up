@@ -223,7 +223,7 @@ class Guidance():
 		# Set the "diversion waypoint" (at yaw zero)
 		dwp = [msg_in.pose.position.x, msg_in.pose.position.y, msg_in.pose.position.z, 0.0]
 		# Set the "return waypoint" (at yaw zero)
-		rwp = [self.current_location.x, self.current_location.y, self.current_location.z, 0.0]
+		rwp = [self.current_location.x, self.current_location.y, self.current_location.z, 0.0] # It's this line that I think is the issue
 
 		# XXX: Could pause here for a moment with ( "rospy.sleep(...)" ) to make sure the UAV stops correctly
 
