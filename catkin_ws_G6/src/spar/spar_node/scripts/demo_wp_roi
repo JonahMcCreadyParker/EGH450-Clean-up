@@ -228,8 +228,20 @@ class Guidance():
 	# This function will fire whenever a ROI pose message is sent
 	# It is also responsible for handling the ROI "inspection task"
 	def callback_inspect_roi(self, msg_in):
+		target_type = self.roi_type
+		if target_type is None:
+			try:
+				type_msg = rospy.wait_for_message(
+					"~roi_type",
+					String,
+					timeout=0.2
+				)
+				target_type = type_msg.data.strip().upper()
+			except rospy.ROSException:
+				rospy.logwarn("ROI received without target type")
+				return
 		# ArUco landing location is stored until the lawn mower pattern finishes
-		if self.roi_type == "A":
+		if target_type == "A":
 			self.aruco_landing_roi = [
 				msg_in.pose.position.x,
 				msg_in.pose.position.y,
@@ -263,7 +275,7 @@ class Guidance():
 		#		the pose to maintain that throughout a diversion
 
 		# Set the "diversion waypoint" (at yaw zero)
-		dwp = [msg_in.pose.position.x, msg_in.pose.position.y, 0.75, 0.0]  # height (pose.z) it gets from image is 2, change to 0.75 to account for drone height and target height
+		dwp = [msg_in.pose.position.x, msg_in.pose.position.y, msg_in.pose.position.z, 0.0]  # height (z) it gets from image is 2, change
 		# Set the "return waypoint" (at yaw zero)
 		rwp = [self.current_location.x, self.current_location.y, self.current_location.z, 0.0] # It's this line that I think is the issue
 
@@ -281,13 +293,13 @@ class Guidance():
 		rospy.sleep(rospy.Duration(5))
 
 		# Deploy payload
-		if self.roi_type == "B": 
+		if target_type == "B": 
 			if not self.payload_deployed["T"]:
 				rospy.loginfo("Backpack detected - deploying tracker")
 				self.deploy_payload("T")
 			else:
 				rospy.logwarn("Tracker has already been deployed")
-		elif self.roi_type == "P": 
+		elif target_type == "P": 
 			if not self.payload_deployed["E"]:
 				rospy.loginfo("Person detected - deploying EpiPen")
 				self.deploy_payload("E")
