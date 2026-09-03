@@ -18,4 +18,7 @@
 		<!--remap from="~pose" to="/mavros/local_position/pose" /-->
 		<!--remap from="~/roi" to="target_detection/roi" /-->
 	</node>
+	<!-- Payload Deployment subsystem: brings up motor_controller and payload_driver.
+	     manual override disabled for autonomous flight. -->
+	<include file="$(find egh450_payload_deploy)/launch/pdd_launch.launch"> </include>	
 </launch>

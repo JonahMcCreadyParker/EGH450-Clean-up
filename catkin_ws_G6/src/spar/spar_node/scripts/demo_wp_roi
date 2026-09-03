@@ -48,6 +48,8 @@ class Guidance():
 
 		self.roi_type = None
 
+		self.aruco_landing_roi = None
+
 		self.payload_deployed = {
 			"T": False,
 			"E": False}
@@ -186,7 +188,7 @@ class Guidance():
 			# Cancel the currently active waypoint
 			self.spar_client.cancel_goal()
 
-			# Hand control over to land.py
+			# Hand control over to land
 			trigger_landing()
 
 			# Landing is complete, shut down guidance node
@@ -226,6 +228,25 @@ class Guidance():
 	# This function will fire whenever a ROI pose message is sent
 	# It is also responsible for handling the ROI "inspection task"
 	def callback_inspect_roi(self, msg_in):
+		# ArUco landing location is stored until the lawn mower pattern finishes
+		if self.roi_type == "A":
+			self.aruco_landing_roi = [
+				msg_in.pose.position.x,
+				msg_in.pose.position.y,
+				2.0,
+				0.0
+			]
+
+			rospy.loginfo(
+				"ArUco landing ROI stored at (%.2f, %.2f, %.2f)",
+				msg_in.pose.position.x,
+				msg_in.pose.position.y,
+				2.0
+			)
+
+			self.roi_type = None
+			return
+		
 		# Ignore new ROI requests while already completing a diversion
 		if self.performing_roi:
 			rospy.logwarn("ROI request ignored - diversion already in progress")
@@ -242,7 +263,7 @@ class Guidance():
 		#		the pose to maintain that throughout a diversion
 
 		# Set the "diversion waypoint" (at yaw zero)
-		dwp = [msg_in.pose.position.x, msg_in.pose.position.y, msg_in.pose.position.z, 0.0]
+		dwp = [msg_in.pose.position.x, msg_in.pose.position.y, 0.75, 0.0]  # height (pose.z) it gets from image is 2, change to 0.75 to account for drone height and target height
 		# Set the "return waypoint" (at yaw zero)
 		rwp = [self.current_location.x, self.current_location.y, self.current_location.z, 0.0] # It's this line that I think is the issue
 
@@ -371,6 +392,27 @@ class Guidance():
 					# Stop waypoint status checks
 					self.timer.shutdown()
 
+					# If an ArUco landing point was found, fly to it first
+					if self.aruco_landing_roi is not None:
+						rospy.loginfo("Flying to stored ArUco landing ROI...")
+
+						self.send_wp(self.aruco_landing_roi)
+
+						self.spar_client.wait_for_result()
+
+						if self.spar_client.get_state() != GoalStatus.SUCCEEDED:
+							rospy.signal_shutdown("ArUco landing waypoint failed")
+							return
+
+						rospy.loginfo(
+							"Reached ArUco landing ROI. Initiating landing..."
+						)
+
+					else:
+						rospy.logwarn(
+							"No ArUco landing ROI stored. Landing at final waypoint."
+						)
+
 					# Begin autonomous landing
 					trigger_landing()
 
@@ -385,7 +427,7 @@ def trigger_takeoff():
     rospy.loginfo("[SPAR] Starting takeoff sequence...")
     
     # 1. Launch the takeoff script from your spar package
-    takeoff_process = subprocess.Popen(["rosrun", "spar_node", "takeoff.py"])
+    takeoff_process = subprocess.Popen(["rosrun", "spar_node", "takeoff"])
     
     # 2. Wait for the take-off script to run before starting another
     takeoff_process.wait()
@@ -396,14 +438,14 @@ def trigger_landing():
     rospy.loginfo("[SPAR] Landing point acquired. Initiating land sequence...")
     
     # 1. Launch the land script from your spar package
-    # This runs land.py in a background process
-    land_process = subprocess.Popen(["rosrun", "spar_node", "land.py"])
+    # This runs land in a background process
+    land_process = subprocess.Popen(["rosrun", "spar_node", "land"])
     
-    # 2. Wait a brief moment (e.g., 0.2s) for land.py to spin up and start publishing
+    # 2. Wait a brief moment (e.g., 0.2s) for land to spin up and start publishing
     land_process.wait()
     
     # 3. Shutdown the demo_wp node safely
-    # This completely kills this script's publishers so PX4 only listens to land.py
+    # This completely kills this script's publishers so PX4 only listens to land
     rospy.loginfo("[SPAR] Landing complete. Hand over to manual control for shutdown.")
 
 

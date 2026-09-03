@@ -1,0 +1,10 @@
+<!-- pdd_bench.launch -->
+<launch>
+    <node name="motor_controller" pkg="egh450_payload_deploy" type="motor_controller.py" output="screen"/>
+
+    <node name="manual_override" pkg="egh450_payload_deploy" type="manual_override.py"
+          output="screen" launch-prefix="xterm -e"/>
+    <node name="nav_simulator" pkg="egh450_payload_deploy" type="nav_simulator.py"
+          output="screen"/>
+</launch>
+
