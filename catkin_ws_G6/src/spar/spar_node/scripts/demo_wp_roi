@@ -46,7 +46,14 @@ class Guidance():
 		# Prevent landing from being triggered more than once
 		self.landing_triggered = False
 
-		
+		self.roi_type = None
+
+		self.payload_deployed = {
+			"T": False,
+			"E": False}
+
+		self.pending_payload = None
+
 		# Make some space to record down our current location
 		self.current_location = Point()
 		# Set our linear and rotational velocities for the flight
@@ -80,7 +87,9 @@ class Guidance():
 			self.sub_pose = rospy.Subscriber("~pose", PoseStamped, self.callback_pose)
 			# Subscriber to catch "ROI" diversion commands
 			self.sub_roi = rospy.Subscriber("~roi", PoseStamped, self.callback_inspect_roi)
-			# su
+
+			# Subscriber to target type
+			self.sub_roi_type = rospy.Subscriber("~roi_type", String, self.callback_inspect_roi_type)
 
 			# Subscribe to battery
 			self.sub_battery = rospy.Subscriber("/mavros/battery",BatteryState,self.callback_battery)
@@ -189,18 +198,30 @@ class Guidance():
 			self.warning_20_sent = True
 
 	def deploy_payload(self, payload):
-
 		if payload not in ['T', 'E']:
 			rospy.logwarn("Invalid payload command: %s", payload)
 			return
-        	
+		if self.payload_deployed[payload]:
+			rospy.logwarn("Payload %s has already been deployed", payload)
+			return
+
+		self.pending_payload = payload
+
 		rospy.loginfo("Requesting deployment of payload %s", payload)
 
 		self.pub_payload.publish(payload)
 
 	def callback_payload_confirmation(self, msg):
-		if msg.data:
-			rospy.loginfo("Payload deployment confirmed")
+		if msg.data and self.pending_payload is not None:
+			self.payload_deployed[self.pending_payload] = True
+
+			rospy.loginfo("Payload %s deployment confirmed",self.pending_payload)
+
+			self.pending_payload = None
+
+	def callback_inspect_roi_type(self, msg_in):
+		self.roi_type = msg_in.data
+		rospy.loginfo("Target type received: %s", self.roi_type)
 
 	# This function will fire whenever a ROI pose message is sent
 	# It is also responsible for handling the ROI "inspection task"
@@ -235,31 +256,40 @@ class Guidance():
 			return
 
 		rospy.loginfo("Reached diversion ROI!")
-		# XXX: Do something?
-		# payload 
 
-		# hovering???? confirm if it lowers 
 		rospy.sleep(rospy.Duration(5))
 
+		# Deploy payload
+		if self.roi_type == "B": 
+			if not self.payload_deployed["T"]:
+				rospy.loginfo("Backpack detected - deploying tracker")
+				self.deploy_payload("T")
+			else:
+				rospy.logwarn("Tracker has already been deployed")
+		elif self.roi_type == "P": 
+			if not self.payload_deployed["E"]:
+				rospy.loginfo("Person detected - deploying EpiPen")
+				self.deploy_payload("E")
+			else:
+				rospy.logwarn("EpiPen has already been deployed")
+		else:
+			rospy.logwarn("Target type invalid, payload not deployed")
+		
+		start_time = rospy.Time.now()
 
-		# if B: 
-		# 	rospy.loginfo("Backpack detected - deploying tracker")
-		# 	self.deploy_payload("T")
-		# 	#wait till done 
-		# 	self.callback_payload_confirmation('T') = True
-		# elif H: 
-		# 	rospy.loginfo("Human detected - deploying EpiPen")
-		# 	self.deploy_payload("E")
-		# else:
-		# 	rospy.logwarn("Target type invalid, payload not deployed")
+		# timeout if not deployed in 10 seconds
+		while self.pending_payload is not None and not rospy.is_shutdown():
+			if (rospy.Time.now() - start_time).to_sec() > 10.0:
+				rospy.logwarn("Payload deployment confirmation timed out",self.pending_payload)
+				self.pending_payload = None
+				break
 
-		# send confimation
-
-		rospy.sleep(rospy.Duration(10))
+			rospy.sleep(0.1)
 
 		rospy.loginfo("Returning to flight plan...")
 		self.send_wp(rwp) 	#command for returning to original waypoint prev
 
+		self.roi_type = None
 
 		self.spar_client.wait_for_result()
 		if self.spar_client.get_state() != GoalStatus.SUCCEEDED:
