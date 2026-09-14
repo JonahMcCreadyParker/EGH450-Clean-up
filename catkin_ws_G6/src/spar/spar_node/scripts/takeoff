@@ -15,8 +15,8 @@ def send_flight_motion(spar_client):
 	# Create our goal
 	goal = FlightMotionGoal()
 	goal.motion = FlightMotionGoal.MOTION_TAKEOFF
-	goal.position.z = rospy.get_param("~height", 2.0)			# Other position information is ignored
-	goal.velocity_vertical = rospy.get_param("~speed", 1.0)		# Other velocity information is ignored
+	goal.position.z = rospy.get_param("~height", 1.7)			# Other position information is ignored
+	goal.velocity_vertical = rospy.get_param("~speed", 0.2)		# Other velocity information is ignored
 	goal.wait_for_convergence = True							# Wait for our takeoff "waypoint" to be reached
 	goal.position_radius = rospy.get_param("~position_radius", 0.1)
 	goal.yaw_range = rospy.get_param("~yaw_range", 0.1)

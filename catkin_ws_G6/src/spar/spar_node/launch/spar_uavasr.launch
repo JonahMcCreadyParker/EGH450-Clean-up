@@ -16,8 +16,9 @@
 	<node pkg="uavasr_emulator" type="uavasr_emulator_node" name="uavasr" clear_params="true" output="screen">
 		
 		<!-- Linear and yaw motion velocities -->
-		<param name="vel_linear" type="double" value="4.0" />
-		<param name="vel_yaw" type="double" value="0.2" />
+		<param name="vel_linear" type="double" value="0.2" /> 	<!-- m/s -->
+		<param name="vel_yaw" type="double" value="0.2" /> 		<!-- m/s -->
+		<param name="flight_height" type="double" value="1.0" /><!-- m -->
 
 		<!-- Position and yaw waypoint accuracies -->
 		<param name="acc_pos" type="double" value="0.1" />
@@ -56,4 +57,7 @@
 		<param name="marker/color/green" value="0.5" type="double" />
 		<param name="marker/color/blue" value="0.5" type="double" />
 	</node>
+	<!-- Payload Deployment subsystem: brings up motor_controller and payload_driver.
+	     manual override disabled for autonomous flight. -->
+	<include file="$(find egh450_payload_deploy)/launch/pdd_launch.launch"> </include>	
 </launch>

@@ -3,13 +3,14 @@
 import cv2
 import rospy
 import numpy as np
+import math
 
 from sensor_msgs.msg import CompressedImage, CameraInfo
-from std_msgs.msg import String
+from std_msgs.msg import String, Bool
 from visualization_msgs.msg import Marker
 from cv_bridge import CvBridge, CvBridgeError
 from geometry_msgs.msg import PoseStamped, PointStamped
-from tf.transformations import quaternion_matrix
+from tf.transformations import euler_from_quaternion
 
 
 class ArucoDetector():
@@ -25,6 +26,7 @@ class ArucoDetector():
     RVIZ_LOG_TOPIC = "/aruco/detection_log_text"
     ROI_TOPIC = "/guidance/roi"
     ROI_TYPE_TOPIC = "/guidance/roi_type"
+    ROI_ENABLE_TOPIC = "/guidance/roi_enable"
 
     # OptiTrack localisation
     UAV_POSE_TOPIC = "/mavros/vision_pose/pose"
@@ -33,9 +35,9 @@ class ArucoDetector():
     # Camera position relative to OptiTrack rigid body origin
     # x = forward, y = left, z = up
     CAMERA_OFFSET = np.array([
-        -0.10,     # Camera is 10 cm behind
-         0.00,
-        -0.15      # Camera is 15 cm below
+        0.10,      # Camera is 10 cm infront
+        0.00,
+        -0.16      # Camera is 16 cm below
     ])
 
     # ArUco setup
@@ -58,6 +60,9 @@ class ArucoDetector():
         self.detected_marker_log = {}
 
         self.uav_pose = None
+
+        # ROI publication starts disabled
+        self.roi_enabled = False
 
         # ArUco marker used as landing target
         self.landing_aruco_id = int(
@@ -93,6 +98,20 @@ class ArucoDetector():
         else:
             self.aruco_params = cv2.aruco.DetectorParameters()
 
+        # Improve detection of smaller and more distant ArUco markers
+        self.aruco_params.adaptiveThreshWinSizeMin = 3
+        self.aruco_params.adaptiveThreshWinSizeMax = 53
+        self.aruco_params.adaptiveThreshWinSizeStep = 4
+
+        self.aruco_params.minMarkerPerimeterRate = 0.015
+        self.aruco_params.maxMarkerPerimeterRate = 4.0
+
+        self.aruco_params.polygonalApproxAccuracyRate = 0.03
+
+        self.aruco_params.cornerRefinementMethod = (
+            cv2.aruco.CORNER_REFINE_SUBPIX
+        )
+
         # Camera calibration
         self.camera_info_sub = rospy.Subscriber(
             self.CAMERA_INFO_TOPIC,
@@ -121,6 +140,13 @@ class ArucoDetector():
             self.UAV_POSE_TOPIC,
             PoseStamped,
             self.uav_pose_callback
+        )
+
+        # Listen for Guidance permission to publish ROI commands
+        self.roi_enable_sub = rospy.Subscriber(
+            self.ROI_ENABLE_TOPIC,
+            Bool,
+            self.roi_enable_callback
         )
 
         # Final processed image
@@ -210,6 +236,13 @@ class ArucoDetector():
         self.uav_pose = msg
 
 
+    def roi_enable_callback(self, msg):
+        self.roi_enabled = msg.data
+
+        if self.roi_enabled:
+            rospy.loginfo("ArUco ROI publication enabled")
+
+
     def raw_frame_callback(self, msg_in):
         try:
             self.latest_raw_frame = (
@@ -261,24 +294,9 @@ class ArucoDetector():
         if self.uav_pose is None:
             return None
 
-        # Camera optical frame -> UAV body frame
-        # Camera looks down, top of image points towards UAV front
-        marker_body = np.array([
-            -raw_y,
-            -raw_x,
-            -raw_z
-        ])
-
-        marker_body += self.CAMERA_OFFSET
-
         pose = self.uav_pose.pose
 
-        uav_world = np.array([
-            pose.position.x,
-            pose.position.y,
-            pose.position.z
-        ])
-
+        # Current UAV yaw in the OptiTrack/world frame
         quaternion = [
             pose.orientation.x,
             pose.orientation.y,
@@ -286,14 +304,45 @@ class ArucoDetector():
             pose.orientation.w
         ]
 
-        rotation = quaternion_matrix(
+        _, _, yaw = euler_from_quaternion(
             quaternion
-        )[:3, :3]
-
-        marker_world = (
-            uav_world
-            + rotation.dot(marker_body)
         )
+
+        cos_yaw = math.cos(yaw)
+        sin_yaw = math.sin(yaw)
+
+        # Correct camera orientation:
+        # image top    = UAV +X
+        # image bottom = UAV -X
+        # image left   = UAV +Y
+        # image right  = UAV -Y
+        #
+        # OpenCV camera coordinates:
+        # raw_x = image right
+        # raw_y = image down
+        # raw_z = optical axis
+        body_x = -raw_y + self.CAMERA_OFFSET[0]
+        body_y = -raw_x + self.CAMERA_OFFSET[1]
+
+        # Rotate UAV/body-frame position into OptiTrack/world frame
+        world_x = (
+            pose.position.x
+            + cos_yaw * body_x
+            - sin_yaw * body_y
+        )
+
+        world_y = (
+            pose.position.y
+            + sin_yaw * body_x
+            + cos_yaw * body_y
+        )
+
+        # ArUco markers are on the ground
+        marker_world = np.array([
+            world_x,
+            world_y,
+            0.0
+        ])
 
         return marker_world
 
@@ -361,18 +410,18 @@ class ArucoDetector():
         marker_id,
         cX,
         cY,
-        x,
-        y,
-        z,
+        marker_world,
         distance
     ):
+        if marker_world is None:
+            return
 
         self.detected_marker_log[int(marker_id)] = {
             "px": cX,
             "py": cY,
-            "x": x,
-            "y": y,
-            "z": z,
+            "x": float(marker_world[0]),
+            "y": float(marker_world[1]),
+            "z": float(marker_world[2]),
             "distance": distance
         }
 
@@ -389,7 +438,7 @@ class ArucoDetector():
 
             log_lines.append(
                 "ID {}: pixel=({}, {}), "
-                "x={:.2f}, y={:.2f}, z={:.2f}, "
+                "world x={:.2f}, y={:.2f}, z={:.2f}, "
                 "dist={:.2f}m".format(
                     saved_id,
                     marker["px"],
@@ -628,9 +677,7 @@ class ArucoDetector():
                 marker_id,
                 cX,
                 cY,
-                x,
-                y,
-                z,
+                marker_world,
                 distance
             )
 
@@ -682,6 +729,9 @@ class ArucoDetector():
         marker_id,
         marker_world
     ):
+
+        if not self.roi_enabled:
+            return
 
         if self.roi_triggered:
             return

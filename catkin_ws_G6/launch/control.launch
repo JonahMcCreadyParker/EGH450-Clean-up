@@ -1,5 +1,25 @@
 <?xml version='1.0'?>
 <launch>
+	<!-- Launch Parameters -->
+	<node name="guidance" pkg="spar_node" type="demo_wp_roi" respawn="false" output="screen">
+		<!-- Linear and yaw motion velocities -->
+		<param name="vel_linear" type="double" value="0.3" /> 	<!-- m/s -->
+		<param name="vel_yaw" type="double" value="0.2" /> 		<!-- m/s -->
+		<param name="flight_height" type="double" value="1.7" /><!-- m -->
+
+		<!-- Position and yaw waypoint accuracies -->
+		<param name="acc_pos" type="double" value="0.1" />
+		<param name="acc_yaw" type="double" value="0.1" />
+
+		<!-- Spar parameters -->
+		<param name="action_topic" type="string" value="spar/flight" />
+
+		<!-- This should fix it, Just uncomment the below and comment the above - From Taj-->
+		<!--remap from="~pose" to="/mavros/local_position/pose" /-->
+		<!--remap from="~/roi" to="target_detection/roi" /-->
+	</node>
+
+
 	<arg name="uav_name" default="eldrone" /> <!--DOUBLE CHECK-->
 	<!-- MAVROS Parameters -->
 	<arg name="fcu_url" default="/dev/ttyUSB0:921600" />
@@ -13,6 +33,8 @@
 	<!-- Spar Node -->
 	<remap from="spar/mav_state" to="mavros/state"/>
 	<remap from="spar/pose" to="mavros/local_position/pose"/>
+	<!-- Taj Addition for DEMO fix, this should remap the pose topic -->
+	<!-- <remap from="~/pose" to="mavros/local_position/pose" /> -->
 	<remap from="spar/setpoint" to="mavros/setpoint_raw/local"/>
 	<include file="$(find spar_node)/launch/spar.launch"/>
 
@@ -33,4 +55,7 @@
 	<!-- Pose Reference -->
 	<node pkg="topic_tools" type="relay" name="mocap_relay" clear_params="true" output="screen"
 	args="/vicon/$(arg uav_name)/pose /mavros/vision_pose/pose"/>
+	<!-- Payload Deployment subsystem: brings up motor_controller and payload_driver.
+	     manual override disabled for autonomous flight. -->
+	<include file="$(find egh450_payload_deploy)/launch/pdd_launch.launch"> </include>	
 </launch>

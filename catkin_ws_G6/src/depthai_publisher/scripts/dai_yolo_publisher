@@ -6,12 +6,13 @@ import cv2
 import depthai as dai
 import rospy
 import numpy as np
+import math
 
 from collections import deque
 from sensor_msgs.msg import CompressedImage, CameraInfo
-from std_msgs.msg import String
+from std_msgs.msg import String, Bool
 from geometry_msgs.msg import PoseStamped, PointStamped
-from tf.transformations import quaternion_matrix
+from tf.transformations import euler_from_quaternion
 
 # This is the detector for backapck and person's
 
@@ -25,13 +26,14 @@ class YoloDetector():
     CAMERA_INFO_TOPIC = "/depthai_node/camera/camera_info"
     ROI_TOPIC = "/guidance/roi"
     ROI_TYPE_TOPIC = "/guidance/roi_type"
+    ROI_ENABLE_TOPIC = "/guidance/roi_enable"
 
     # World position topics
     UAV_POSE_TOPIC = "/mavros/vision_pose/pose"
     WORLD_POSITION_TOPIC = "/yolo/world_position"
 
     # YOLO settings
-    CONFIDENCE = 0.70
+    CONFIDENCE = 0.80
     IOU = 0.50
     CAMERA_FPS = 15.0
     JPEG_QUALITY = 85
@@ -43,11 +45,11 @@ class YoloDetector():
     FRAMES_REQUIRED = 2
 
     # ROI publication filtering
-    ROI_FRAMES_REQUIRED = 4
+    ROI_FRAMES_REQUIRED = 3
 
     # Hard-coded ROI fallback if OptiTrack/world position is unavailable
-    PERSON_FALLBACK_ROI = [-1.0, 1.0, 1.75]
-    BACKPACK_FALLBACK_ROI = [1.0, 1.0, 1.75]
+    PERSON_FALLBACK_ROI = [-1.0, 1.0, 2.0]
+    BACKPACK_FALLBACK_ROI = [1.0, 1.0, 2.0]
 
     # World position can be turned off for flight if needed
     ENABLE_WORLD_POSITION = True
@@ -56,9 +58,9 @@ class YoloDetector():
     # Camera position relative to OptiTrack rigid body origin
     # x = forward, y = left, z = up
     CAMERA_OFFSET = np.array([
-        -0.10,
-         0.00,
-        -0.15
+        0.10,
+        0.00,
+        -0.16
     ])
 
 
@@ -101,6 +103,9 @@ class YoloDetector():
         # Current UAV pose and camera calibration
         self.uav_pose = None
         self.camera_matrix = None
+
+        # ROI publication starts disabled
+        self.roi_enabled = False
 
         # Detection history for filtering false positives
         self.detection_history = deque(
@@ -147,6 +152,13 @@ class YoloDetector():
             self.UAV_POSE_TOPIC,
             PoseStamped,
             self.uav_pose_callback
+        )
+
+        # Listen for Guidance permission to publish ROI commands
+        self.roi_enable_sub = rospy.Subscriber(
+            self.ROI_ENABLE_TOPIC,
+            Bool,
+            self.roi_enable_callback
         )
 
         # YOLO target world position
@@ -202,6 +214,13 @@ class YoloDetector():
 
     def uav_pose_callback(self, msg):
         self.uav_pose = msg
+
+
+    def roi_enable_callback(self, msg):
+        self.roi_enabled = msg.data
+
+        if self.roi_enabled:
+            rospy.loginfo("YOLO ROI publication enabled")
 
 
     def get_labels(self):
@@ -303,7 +322,6 @@ class YoloDetector():
 
 
     def pixel_to_world(self, cX, cY, frame_width, frame_height):
-        # This part can be turned off if world position is not needed
         if not self.enable_world_position:
             return None
 
@@ -315,29 +333,44 @@ class YoloDetector():
         cx = self.camera_matrix[0, 2]
         cy = self.camera_matrix[1, 2]
 
-        # Detection centre pixel to camera ray
-        ray_camera = np.array([
-            (cX - cx) / fx,
-            (cY - cy) / fy,
-            1.0
-        ])
-
-        # Camera optical frame to UAV body frame
-        # Same convention as ArUco detector
-        ray_body = np.array([
-            -ray_camera[1],
-            -ray_camera[0],
-            -ray_camera[2]
-        ])
-
         pose = self.uav_pose.pose
 
-        uav_world = np.array([
-            pose.position.x,
-            pose.position.y,
+        # Camera height above the ground
+        camera_z = (
             pose.position.z
-        ])
+            + self.CAMERA_OFFSET[2]
+        )
 
+        ground_distance = (
+            camera_z
+            - self.GROUND_Z
+        )
+
+        # Pixel position relative to optical centre
+        image_right = (
+            (cX - cx) / fx
+        ) * ground_distance
+
+        image_down = (
+            (cY - cy) / fy
+        ) * ground_distance
+
+        # Correct camera orientation:
+        # image top    = UAV +X
+        # image bottom = UAV -X
+        # image left   = UAV +Y
+        # image right  = UAV -Y
+        body_x = (
+            -image_down
+            + self.CAMERA_OFFSET[0]
+        )
+
+        body_y = (
+            -image_right
+            + self.CAMERA_OFFSET[1]
+        )
+
+        # Current UAV yaw in the OptiTrack/world frame
         quaternion = [
             pose.orientation.x,
             pose.orientation.y,
@@ -345,32 +378,31 @@ class YoloDetector():
             pose.orientation.w
         ]
 
-        rotation = quaternion_matrix(
+        _, _, yaw = euler_from_quaternion(
             quaternion
-        )[:3, :3]
-
-        camera_world = (
-            uav_world
-            + rotation.dot(self.CAMERA_OFFSET)
         )
 
-        ray_world = rotation.dot(ray_body)
+        cos_yaw = math.cos(yaw)
+        sin_yaw = math.sin(yaw)
 
-        # Ray must point towards the ground
-        if abs(ray_world[2]) < 0.001:
-            return None
-
-        distance = (
-            self.GROUND_Z - camera_world[2]
-        ) / ray_world[2]
-
-        if distance <= 0:
-            return None
-
-        target_world = (
-            camera_world
-            + distance * ray_world
+        # UAV/body frame -> OptiTrack/world frame
+        world_x = (
+            pose.position.x
+            + cos_yaw * body_x
+            - sin_yaw * body_y
         )
+
+        world_y = (
+            pose.position.y
+            + sin_yaw * body_x
+            + cos_yaw * body_y
+        )
+
+        target_world = np.array([
+            world_x,
+            world_y,
+            self.GROUND_Z
+        ])
 
         return target_world
 
@@ -383,7 +415,7 @@ class YoloDetector():
 
         msg.point.x = float(world_position[0])
         msg.point.y = float(world_position[1])
-        msg.point.z = float(world_position[2]) 
+        msg.point.z = float(world_position[2])
 
         self.world_position_pub.publish(msg)
 
@@ -393,6 +425,9 @@ class YoloDetector():
         label,
         world_position=None
     ):
+
+        if not self.roi_enabled:
+            return
 
         label_lower = label.lower()
 

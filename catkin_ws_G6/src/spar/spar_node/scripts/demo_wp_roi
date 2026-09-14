@@ -46,6 +46,12 @@ class Guidance():
 		# Prevent landing from being triggered more than once
 		self.landing_triggered = False
 
+		# self.aruco_list = []
+		# aruco info from img: id, pixel x, pixel y, x, y, z, dist from camera
+		self.aruco_list = rospy.Subscriber("/aruco/pose_log", String)
+
+
+
 		self.roi_type = None
 
 		self.aruco_landing_roi = None
@@ -56,11 +62,15 @@ class Guidance():
 
 		self.pending_payload = None
 
+		# ROI commands are disabled until waypoint 2 is reached
+		self.roi_commands_enabled = False
+
 		# Make some space to record down our current location
 		self.current_location = Point()
 		# Set our linear and rotational velocities for the flight
 		self.vel_linear = rospy.get_param("~vel_linear", 0.2) #default is 0.2
 		self.vel_yaw = rospy.get_param("~vel_yaw", 0.2)
+		self.flight_height = rospy.get_param("~flight_height", 2.0)
 		# Set our position and yaw waypoint accuracies
 		self.accuracy_pos = rospy.get_param("~acc_pos", 0.1)
 		self.accuracy_yaw = rospy.get_param("~acc_yaw", 0.1)
@@ -86,7 +96,8 @@ class Guidance():
 			# Callback to save "current location" such that we can perform and return
 			# from a diversion to the correct location
 			# XXX: These topics could be hard-coded to avoid using a launch file
-			self.sub_pose = rospy.Subscriber("~pose", PoseStamped, self.callback_pose)
+			pose_topic = rospy.get_param("~pose_topic", "/mavros/local_position/pose")
+			self.sub_pose = rospy.Subscriber(pose_topic, PoseStamped, self.callback_pose)
 			# Subscriber to catch "ROI" diversion commands
 			self.sub_roi = rospy.Subscriber("~roi", PoseStamped, self.callback_inspect_roi)
 
@@ -96,11 +107,24 @@ class Guidance():
 			# Subscribe to battery
 			self.sub_battery = rospy.Subscriber("/mavros/battery",BatteryState,self.callback_battery)
 
+			# Publisher used to enable image ROI commands after waypoint 2
+			self.pub_roi_enable = rospy.Publisher(
+				"/guidance/roi_enable",
+				Bool,
+				queue_size=1,
+				latch=True
+			)
+
+			self.pub_roi_enable.publish(False)
+
 			# Publisher used to tell payload_driver which payload to deploy
 			self.pub_payload = rospy.Publisher("/payload/nav_clearance",String,queue_size=10)
 
 			# Listen for confirmation that deployment occurred
 			self.sub_payload_confirm = rospy.Subscriber("/payload/deploy_confirmation",Bool,self.callback_payload_confirmation)
+
+
+			
 
 			# XXX: Could have a publisher to output our waypoint progress
 			# throughout the flight (should publish each time the waypoint
@@ -245,7 +269,7 @@ class Guidance():
 			self.aruco_landing_roi = [
 				msg_in.pose.position.x,
 				msg_in.pose.position.y,
-				2.0,
+				self.flight_height,
 				0.0
 			]
 
@@ -253,7 +277,7 @@ class Guidance():
 				"ArUco landing ROI stored at (%.2f, %.2f, %.2f)",
 				msg_in.pose.position.x,
 				msg_in.pose.position.y,
-				2.0
+				self.flight_height
 			)
 
 			self.roi_type = None
@@ -275,14 +299,21 @@ class Guidance():
 		#		the pose to maintain that throughout a diversion
 
 		# Set the "diversion waypoint" (at yaw zero)
-		dwp = [msg_in.pose.position.x, msg_in.pose.position.y, msg_in.pose.position.z, 0.0]  # height (z) it gets from image is 2, change
+		dwp_intermediate = [msg_in.pose.position.x, msg_in.pose.position.y, self.flight_height, 0.0]
+		dwp = [msg_in.pose.position.x, msg_in.pose.position.y, 1.1, 0.0]  
+
 		# Set the "return waypoint" (at yaw zero)
 		rwp = [self.current_location.x, self.current_location.y, self.current_location.z, 0.0] # It's this line that I think is the issue
 
 		# XXX: Could pause here for a moment with ( "rospy.sleep(...)" ) to make sure the UAV stops correctly
-
+		# Hover above payload target at flight height
+		self.send_wp(dwp_intermediate)
+		self.spar_client.wait_for_result()
+		rospy.sleep(1.0)
+		# Hover above payload target at lower height
 		self.send_wp(dwp)
 		self.spar_client.wait_for_result()
+		rospy.sleep(1.0)
 		if self.spar_client.get_state() != GoalStatus.SUCCEEDED:
 			# Something went wrong, cancel out of guidance!
 			rospy.signal_shutdown("cancelled")
@@ -291,6 +322,7 @@ class Guidance():
 		rospy.loginfo("Reached diversion ROI!")
 
 		rospy.sleep(rospy.Duration(5))
+		
 
 		# Deploy payload
 		if target_type == "B": 
@@ -317,9 +349,17 @@ class Guidance():
 				self.pending_payload = None
 				break
 
-			rospy.sleep(0.1)
+			rospy.sleep(1.0)
 
+		rospy.sleep(2.0)
 		rospy.loginfo("Returning to flight plan...")
+
+		# Hover above payload target at flight height
+		self.send_wp(dwp_intermediate)
+		self.spar_client.wait_for_result()
+
+		rospy.sleep(1.0)
+		
 		self.send_wp(rwp) 	#command for returning to original waypoint prev
 
 		self.roi_type = None
@@ -382,6 +422,12 @@ class Guidance():
 			#		where we won't recover from, and should just exit
 			if self.spar_client.get_state() == GoalStatus.SUCCEEDED:
 				rospy.loginfo("Reached waypoint %i!" % (self.waypoint_counter))
+
+				# Allow the image system to publish ROI commands after waypoint 2
+				if self.waypoint_counter == 2 and not self.roi_commands_enabled:
+					self.roi_commands_enabled = True
+					self.pub_roi_enable.publish(True)
+					rospy.loginfo("ROI command publication enabled after waypoint 2")
 
 				# XXX:	Another check could go here to finish the mission early
 				#		if "all" inspection tasks have been completed
@@ -461,40 +507,81 @@ def trigger_landing():
     rospy.loginfo("[SPAR] Landing complete. Hand over to manual control for shutdown.")
 
 
+def log_aruco(aruco_list):
+	aruco_list.append()
+	
+
+
+
+
+
+
 def main(args):
 	# Initialise ROS
 	rospy.init_node('guidance')
-	# flight_height = 1.0 # meters
-
+	# obj = Guidance(wps)
+	# flight_height = obj.flight_height
 	# List of waypoints
 	# [X, Y, Z, Yaw]
 		
+	# wps = [
+	# 	[ 0.0,  0.0,  flight_height,  0.0],   # from origin
+	# 	[ 3.0, -2.0,  flight_height,  0.0],
+	# 	[-3.0, -2.0,  flight_height,  0.0],
+	# 	[-3.0, -1.5,  flight_height,  0.0],
+	# 	[ 3.0, -1.5,  flight_height,  0.0],
+	# 	[ 3.0, -1.0,  flight_height,  0.0],
+	# 	[-3.0, -1.0,  flight_height,  0.0],
+	# 	[-3.0, -0.5,  flight_height,  0.0],
+	# 	[ 3.0, -0.5,  flight_height,  0.0],
+	# 	[ 3.0,  0.0,  flight_height,  0.0],
+	# 	[-3.0,  0.0,  flight_height,  0.0],
+	# 	[-3.0,  0.5,  flight_height,  0.0],
+	# 	[ 3.0,  0.5,  flight_height,  0.0],
+	# 	[ 3.0,  1.0,  flight_height,  0.0],
+	# 	[-3.0,  1.0,  flight_height,  0.0],
+	# 	[-3.0,  1.5,  flight_height,  0.0],
+	# 	[ 3.0,  1.5,  flight_height,  0.0],
+	# 	[ 0.0,  0.0,  flight_height,  0.0]    # to origin
+	# 	]
+
+	h = 1.7 # meters
+
 	wps = [
-		[ 0.0,  0.0,  2.0,  0.0],   # from origin
-		[ 3.0, -2.0,  2.0,  0.0],
-		[-3.0, -2.0,  2.0,  0.0],
-		[-3.0, -1.5,  2.0,  0.0],
-		[ 3.0, -1.5,  2.0,  0.0],
-		[ 3.0, -1.0,  2.0,  0.0],
-		[-3.0, -1.0,  2.0,  0.0],
-		[-3.0, -0.5,  2.0,  0.0],
-		[ 3.0, -0.5,  2.0,  0.0],
-		[ 3.0,  0.0,  2.0,  0.0],
-		[-3.0,  0.0,  2.0,  0.0],
-		[-3.0,  0.5,  2.0,  0.0],
-		[ 3.0,  0.5,  2.0,  0.0],
-		[ 3.0,  1.0,  2.0,  0.0],
-		[-3.0,  1.0,  2.0,  0.0],
-		[-3.0,  1.5,  2.0,  0.0],
-		[ 3.0,  1.5,  2.0,  0.0],
-		[ 0.0,  0.0,  2.0,  0.0]    # to origin
+		[ 0.0,  0.0,  h,  0.0],   # from origin
+		[ 3.0, -2.0,  h,  0.0],
+		[-3.0, -2.0,  h,  0.0],
+		[-3.0, -1.5,  h,  0.0],
+		[ 3.0, -1.5,  h,  0.0],
+		[ 3.0, -1.0,  h,  0.0],
+		[-3.0, -1.0,  h,  0.0],
+		[-3.0, -0.5,  h,  0.0],
+		[ 3.0, -0.5,  h,  0.0],
+		[ 3.0,  0.0,  h,  0.0],
+		[-3.0,  0.0,  h,  0.0],
+		[-3.0,  0.5,  h,  0.0],
+		[ 3.0,  0.5,  h,  0.0],
+		[ 3.0,  1.0,  h,  0.0],
+		[-3.0,  1.0,  h,  0.0],
+		[-3.0,  1.5,  h,  0.0],
+		[ 3.0,  1.5,  h,  0.0],
+		[ 0.0,  0.0,  h,  0.0]    # to origin
 		]
+
 
 	# Take off first
 	trigger_takeoff()
 
 	# Create our guidance class option
 	Guidance(wps)
+
+	# aruco_list = obj.aruco_list()
+
+	# for i in range(len(aruco_list)):
+	# 	rospy.loginfo("Stored AruCo Marker at:  %(i).1f, %(i).2f, %(i).2f, %(i).2f", aruco_list[0], aruco_list[3], aruco_list[4], aruco_list[5])
+			
+
+
 
 
 	# Spin!
@@ -508,4 +595,3 @@ if __name__ == '__main__':
 		pass
 
 	print('')
-	
