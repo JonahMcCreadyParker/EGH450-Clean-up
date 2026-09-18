@@ -33,6 +33,9 @@ class ArucoDetector():
     UAV_POSE_TOPIC = "/mavros/vision_pose/pose"
     WORLD_POSITION_TOPIC = "/aruco/world_position"
 
+    # OptiTrack watchdog
+    OPTITRACK_TIMEOUT = 1
+
     # Camera position relative to OptiTrack rigid body origin
     # x = forward, y = left, z = up
     CAMERA_OFFSET = np.array([
@@ -63,6 +66,8 @@ class ArucoDetector():
         self.detected_marker_log = {}
 
         self.uav_pose = None
+        self.last_pose_time = None
+        self.optitrack_connected = False
         self.roi_enabled = False
         self.roi_triggered = False
 
@@ -260,6 +265,67 @@ class ArucoDetector():
     ):
 
         self.uav_pose = msg
+        self.last_pose_time = rospy.Time.now()
+
+        if not self.optitrack_connected:
+
+            self.optitrack_connected = True
+
+            rospy.loginfo(
+                "OPTITRACK CONNECTED"
+            )
+
+
+    def draw_optitrack_status(
+        self,
+        frame
+    ):
+
+        connected = False
+
+        if self.last_pose_time is not None:
+
+            pose_age = (
+                rospy.Time.now()
+                - self.last_pose_time
+            ).to_sec()
+
+            connected = (
+                pose_age
+                <= self.OPTITRACK_TIMEOUT
+            )
+
+        if not connected:
+
+            if self.optitrack_connected:
+
+                self.optitrack_connected = False
+
+                rospy.logerr(
+                    "OPTITRACK DISCONNECTED - POSITION DATA STALE"
+                )
+
+            text = "OPTITRACK DISCONNECTED"
+            colour = (0, 0, 255)
+
+        else:
+
+            text = "OPTITRACK CONNECTED"
+            colour = (0, 255, 0)
+
+        cv2.putText(
+            frame,
+            text,
+            (
+                18,
+                frame.shape[0] - 22
+            ),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.75,
+            colour,
+            2,
+            cv2.LINE_AA
+        )
 
 
     def roi_enable_callback(
@@ -306,6 +372,10 @@ class ArucoDetector():
         # onto the synchronized YOLO image.
         self.find_aruco(
             raw_frame,
+            yolo_frame
+        )
+
+        self.draw_optitrack_status(
             yolo_frame
         )
 
