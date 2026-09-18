@@ -44,15 +44,15 @@ class ArucoDetector():
     # ArUco
     ARUCO_DICT = cv2.aruco.DICT_5X5_100
     MARKER_LENGTH = 0.200
-    LANDING_FRAMES_REQUIRED = 3
+    LANDING_FRAMES_REQUIRED = 2
 
     # HUD
     SHOW_CROSSHAIR = True
     SHOW_DISTANCE_TEXT = True
     SHOW_WORLD_AXES = True
 
-    CROSSHAIR_SIZE = 18
-    CROSSHAIR_GAP = 6
+    CROSSHAIR_SIZE = 24
+    CROSSHAIR_GAP = 8
 
 
     def __init__(self):
@@ -97,7 +97,8 @@ class ArucoDetector():
                 )
             )
 
-        # Default OpenCV ArUco detector parameters
+        # Use OpenCV's default ArUco parameters.
+        # No additional tuning for now.
         if hasattr(
             cv2.aruco,
             "DetectorParameters_create"
@@ -121,7 +122,12 @@ class ArucoDetector():
             queue_size=1
         )
 
-        # Synchronised raw + YOLO images
+        # Synchronised raw + YOLO images.
+        #
+        # Both are stamped identically by
+        # dai_yolo_publisher, so the ArUco detection
+        # and displayed YOLO frame represent the same
+        # camera frame.
         self.raw_frame_sub = (
             message_filters.Subscriber(
                 self.FRAME_SUB_TOPIC,
@@ -139,13 +145,12 @@ class ArucoDetector():
         )
 
         self.image_sync = (
-            message_filters.ApproximateTimeSynchronizer(
+            message_filters.TimeSynchronizer(
                 [
                     self.raw_frame_sub,
                     self.yolo_frame_sub
                 ],
-                queue_size=2,
-                slop=0.03
+                queue_size=2
             )
         )
 
@@ -276,10 +281,6 @@ class ArucoDetector():
         raw_msg,
         yolo_msg
     ):
-        """
-        Raw and YOLO images arriving here belong to the
-        same source camera frame.
-        """
 
         try:
 
@@ -301,6 +302,8 @@ class ArucoDetector():
 
             return
 
+        # Detect on the clean raw image, but draw
+        # onto the synchronized YOLO image.
         self.find_aruco(
             raw_frame,
             yolo_frame
@@ -338,6 +341,7 @@ class ArucoDetector():
         cos_yaw = math.cos(yaw)
         sin_yaw = math.sin(yaw)
 
+        # Camera orientation:
         # image top    = UAV +X
         # image bottom = UAV -X
         # image left   = UAV +Y
@@ -413,6 +417,8 @@ class ArucoDetector():
         centre_x = width // 2
         centre_y = height // 2
 
+        colour = (0, 255, 255)
+
         cv2.line(
             frame,
             (
@@ -423,8 +429,8 @@ class ArucoDetector():
                 centre_x - self.CROSSHAIR_GAP,
                 centre_y
             ),
-            (0, 255, 255),
-            1
+            colour,
+            2
         )
 
         cv2.line(
@@ -437,8 +443,8 @@ class ArucoDetector():
                 centre_x + self.CROSSHAIR_SIZE,
                 centre_y
             ),
-            (0, 255, 255),
-            1
+            colour,
+            2
         )
 
         cv2.line(
@@ -451,8 +457,8 @@ class ArucoDetector():
                 centre_x,
                 centre_y - self.CROSSHAIR_GAP
             ),
-            (0, 255, 255),
-            1
+            colour,
+            2
         )
 
         cv2.line(
@@ -465,8 +471,8 @@ class ArucoDetector():
                 centre_x,
                 centre_y + self.CROSSHAIR_SIZE
             ),
-            (0, 255, 255),
-            1
+            colour,
+            2
         )
 
 
@@ -477,9 +483,12 @@ class ArucoDetector():
 
         height, width = frame.shape[:2]
 
-        origin_x = width - 70
-        origin_y = 70
-        axis_length = 35
+        # Larger compass for 960x540
+        origin_x = width - 100
+        origin_y = 100
+
+        radius = 72
+        axis_length = 50
 
         yellow = (0, 255, 255)
 
@@ -488,7 +497,7 @@ class ArucoDetector():
         cv2.circle(
             overlay,
             (origin_x, origin_y),
-            50,
+            radius,
             yellow,
             -1
         )
@@ -505,9 +514,9 @@ class ArucoDetector():
         cv2.circle(
             frame,
             (origin_x, origin_y),
-            50,
+            radius,
             yellow,
-            1,
+            2,
             cv2.LINE_AA
         )
 
@@ -520,23 +529,9 @@ class ArucoDetector():
                 origin_y - axis_length
             ),
             yellow,
-            2,
+            3,
             cv2.LINE_AA,
             tipLength=0.25
-        )
-
-        cv2.putText(
-            frame,
-            "+X",
-            (
-                origin_x - 10,
-                origin_y - axis_length - 6
-            ),
-            cv2.FONT_HERSHEY_SIMPLEX,
-            0.38,
-            yellow,
-            1,
-            cv2.LINE_AA
         )
 
         # +Y left
@@ -548,36 +543,26 @@ class ArucoDetector():
                 origin_y
             ),
             yellow,
-            2,
+            3,
             cv2.LINE_AA,
             tipLength=0.25
         )
 
-        cv2.putText(
-            frame,
-            "+Y",
-            (
-                origin_x - axis_length - 23,
-                origin_y + 4
-            ),
-            cv2.FONT_HERSHEY_SIMPLEX,
-            0.38,
-            yellow,
-            1,
-            cv2.LINE_AA
-        )
+        font = cv2.FONT_HERSHEY_SIMPLEX
+        font_scale = 0.60
+        thickness = 2
 
         cv2.putText(
             frame,
-            "-Y",
+            "+X",
             (
-                origin_x + axis_length + 4,
-                origin_y + 4
+                origin_x - 16,
+                origin_y - axis_length - 10
             ),
-            cv2.FONT_HERSHEY_SIMPLEX,
-            0.38,
+            font,
+            font_scale,
             yellow,
-            1,
+            thickness,
             cv2.LINE_AA
         )
 
@@ -585,23 +570,50 @@ class ArucoDetector():
             frame,
             "-X",
             (
-                origin_x - 10,
-                origin_y + axis_length + 15
+                origin_x - 16,
+                origin_y + axis_length + 24
             ),
-            cv2.FONT_HERSHEY_SIMPLEX,
-            0.38,
+            font,
+            font_scale,
             yellow,
-            1,
+            thickness,
+            cv2.LINE_AA
+        )
+
+        cv2.putText(
+            frame,
+            "+Y",
+            (
+                origin_x - axis_length - 40,
+                origin_y + 7
+            ),
+            font,
+            font_scale,
+            yellow,
+            thickness,
+            cv2.LINE_AA
+        )
+
+        cv2.putText(
+            frame,
+            "-Y",
+            (
+                origin_x + axis_length + 8,
+                origin_y + 7
+            ),
+            font,
+            font_scale,
+            yellow,
+            thickness,
             cv2.LINE_AA
         )
 
         cv2.circle(
             frame,
             (origin_x, origin_y),
-            3,
+            5,
             yellow,
-            -1,
-            cv2.LINE_AA
+            -1
         )
 
 
@@ -714,7 +726,8 @@ class ArucoDetector():
                 output_frame
             )
 
-        # ArUco detection on clean raw image
+        # ArUco detection is performed on the clean,
+        # synchronized raw frame.
         gray = cv2.cvtColor(
             frame,
             cv2.COLOR_BGR2GRAY
@@ -782,12 +795,13 @@ class ArucoDetector():
 
             pts_int = pts.astype(int)
 
+            # Larger marker outline for 960x540
             cv2.polylines(
                 output_frame,
                 [pts_int],
                 True,
                 (0, 255, 0),
-                2
+                3
             )
 
             cX = int(
@@ -805,24 +819,26 @@ class ArucoDetector():
             cv2.circle(
                 output_frame,
                 (cX, cY),
-                4,
+                5,
                 (0, 0, 255),
                 -1
             )
 
+            # Larger marker ID
             cv2.putText(
                 output_frame,
-                "ID: {}".format(
+                "ARUCO ID {}".format(
                     marker_id
                 ),
                 (
-                    cX + 8,
-                    cY - 8
+                    cX + 12,
+                    cY - 12
                 ),
                 cv2.FONT_HERSHEY_SIMPLEX,
-                0.5,
+                0.75,
                 (0, 255, 0),
-                2
+                2,
+                cv2.LINE_AA
             )
 
             if (
@@ -906,7 +922,7 @@ class ArucoDetector():
 
                 cv2.putText(
                     output_frame,
-                    "Landing confirm: {}/{}".format(
+                    "LANDING {}/{}".format(
                         min(
                             self.landing_detection_count,
                             self.LANDING_FRAMES_REQUIRED
@@ -914,13 +930,14 @@ class ArucoDetector():
                         self.LANDING_FRAMES_REQUIRED
                     ),
                     (
-                        cX + 8,
-                        cY + 49
+                        cX + 12,
+                        cY + 72
                     ),
                     cv2.FONT_HERSHEY_SIMPLEX,
-                    0.40,
+                    0.65,
                     (0, 255, 255),
-                    1
+                    2,
+                    cv2.LINE_AA
                 )
 
                 if (
@@ -943,13 +960,14 @@ class ArucoDetector():
                         distance
                     ),
                     (
-                        cX + 8,
-                        cY + 15
+                        cX + 12,
+                        cY + 24
                     ),
                     cv2.FONT_HERSHEY_SIMPLEX,
-                    0.42,
+                    0.60,
                     (0, 255, 255),
-                    1
+                    2,
+                    cv2.LINE_AA
                 )
 
                 cv2.putText(
@@ -960,13 +978,14 @@ class ArucoDetector():
                         raw_z
                     ),
                     (
-                        cX + 8,
-                        cY + 32
+                        cX + 12,
+                        cY + 48
                     ),
                     cv2.FONT_HERSHEY_SIMPLEX,
-                    0.40,
+                    0.55,
                     (0, 255, 255),
-                    1
+                    2,
+                    cv2.LINE_AA
                 )
 
         if not landing_seen_this_frame:
@@ -1049,6 +1068,7 @@ class ArucoDetector():
 
         msg_out = CompressedImage()
 
+        # Preserve synchronized source timestamp
         msg_out.header.stamp = stamp
         msg_out.header.frame_id = "oak_rgb_camera"
 

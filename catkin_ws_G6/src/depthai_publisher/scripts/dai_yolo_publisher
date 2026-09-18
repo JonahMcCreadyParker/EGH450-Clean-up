@@ -22,16 +22,16 @@ class YoloDetector():
     OUTPUT_TOPIC = "/yolo/image/compressed"
     DETECTION_TOPIC = "/yolo/detections"
     CAMERA_INFO_TOPIC = "/depthai_node/camera/camera_info"
+
     ROI_TOPIC = "/guidance/roi"
     ROI_TYPE_TOPIC = "/guidance/roi_type"
     ROI_ENABLE_TOPIC = "/guidance/roi_enable"
 
-    # World position topics
     UAV_POSE_TOPIC = "/mavros/vision_pose/pose"
     WORLD_POSITION_TOPIC = "/yolo/world_position"
 
     # Camera / YOLO settings
-    CONFIDENCE = 0.80
+    CONFIDENCE = 0.90
     IOU = 0.50
     CAMERA_FPS = 15.0
     JPEG_QUALITY = 95
@@ -136,6 +136,7 @@ class YoloDetector():
                 config_file
             )
 
+        # Keep robust loading for the Roboflow/DepthAI JSON
         self.labels = self.get_labels()
 
         self.input_width, self.input_height = (
@@ -170,19 +171,19 @@ class YoloDetector():
         self.world_position_pub = rospy.Publisher(
             self.WORLD_POSITION_TOPIC,
             PointStamped,
-            queue_size=10
+            queue_size=1
         )
 
         self.roi_pub = rospy.Publisher(
             self.ROI_TOPIC,
             PoseStamped,
-            queue_size=10
+            queue_size=1
         )
 
         self.roi_type_pub = rospy.Publisher(
             self.ROI_TYPE_TOPIC,
             String,
-            queue_size=10
+            queue_size=1
         )
 
         # ROS subscribers
@@ -345,6 +346,7 @@ class YoloDetector():
             dai.ColorCameraProperties.SensorResolution.THE_1080_P
         )
 
+        # High-resolution clean stream for ArUco/display
         camera.setPreviewSize(
             self.RAW_WIDTH,
             self.RAW_HEIGHT
@@ -366,7 +368,7 @@ class YoloDetector():
             self.camera_fps
         )
 
-        # Full 16:9 image -> 416x416 letterboxed YOLO input
+        # Full 16:9 frame -> 416x416 letterboxed YOLO input
         yolo_manip = pipeline.create(
             dai.node.ImageManip
         )
@@ -858,36 +860,45 @@ class YoloDetector():
                 )
             )
 
+            # Person = red
+            # Backpack = blue
+            if label.lower() == "person":
+                colour = (0, 0, 255)
+            else:
+                colour = (255, 0, 0)
+
             cv2.rectangle(
                 frame,
                 (x1, y1),
                 (x2, y2),
-                (255, 0, 0),
-                2
+                colour,
+                3
             )
 
             cv2.circle(
                 frame,
                 (cX, cY),
-                4,
-                (0, 255, 255),
+                5,
+                colour,
                 -1
             )
 
+            # Larger detection text for 960x540
             cv2.putText(
                 frame,
                 "{} {:.2f}".format(
-                    label,
+                    label.upper(),
                     confidence
                 ),
                 (
                     x1,
-                    max(y1 - 8, 20)
+                    max(y1 - 10, 30)
                 ),
                 cv2.FONT_HERSHEY_SIMPLEX,
-                0.6,
-                (255, 0, 0),
-                2
+                0.85,
+                colour,
+                2,
+                cv2.LINE_AA
             )
 
         return detection_log
@@ -898,10 +909,6 @@ class YoloDetector():
         frame,
         stamp
     ):
-        """
-        Encode an image using the timestamp belonging to
-        the source camera frame.
-        """
 
         success, encoded_image = cv2.imencode(
             ".jpg",
@@ -917,11 +924,12 @@ class YoloDetector():
 
         msg = CompressedImage()
 
+        # Raw and YOLO streams receive the same
+        # timestamp for synchronization.
         msg.header.stamp = stamp
         msg.header.frame_id = "oak_rgb_camera"
 
         msg.format = "jpeg"
-
         msg.data = encoded_image.tobytes()
 
         return msg
@@ -980,6 +988,8 @@ class YoloDetector():
                 (3, 3)
             )
 
+            # Queue size 1 prevents stale camera frames
+            # accumulating on the Pi.
             raw_frame_queue = (
                 device.getOutputQueue(
                     "raw_frames",
@@ -1006,7 +1016,6 @@ class YoloDetector():
 
             while not rospy.is_shutdown():
 
-                # Get one camera frame
                 raw_packet = (
                     raw_frame_queue.get()
                 )
@@ -1020,8 +1029,9 @@ class YoloDetector():
                     .detections
                 )
 
-                # One ROS timestamp for BOTH versions
-                # of this camera frame.
+                # IMPORTANT:
+                # Both outgoing image streams receive
+                # exactly the same timestamp.
                 frame_stamp = rospy.Time.now()
 
                 processed_frame = (
@@ -1047,21 +1057,21 @@ class YoloDetector():
                 if frame_time > 0:
                     fps = 1.0 / frame_time
 
+                # Larger status text for 960x540
                 cv2.putText(
                     processed_frame,
                     "Detections: {} | FPS: {:.1f}".format(
                         len(detection_log),
                         fps
                     ),
-                    (12, 28),
+                    (18, 38),
                     cv2.FONT_HERSHEY_SIMPLEX,
-                    0.7,
+                    0.90,
                     (0, 255, 0),
-                    2
+                    2,
+                    cv2.LINE_AA
                 )
 
-                # Encode both images before publishing.
-                # Both carry exactly the same timestamp.
                 raw_msg = self.make_image_msg(
                     raw_frame,
                     frame_stamp
@@ -1082,7 +1092,7 @@ class YoloDetector():
                         yolo_msg
                     )
 
-                # CameraInfo gets the same timestamp too
+                # CameraInfo also corresponds to this frame
                 camera_info.header.stamp = (
                     frame_stamp
                 )
