@@ -14,10 +14,8 @@ from std_msgs.msg import String, Bool
 from geometry_msgs.msg import PoseStamped, PointStamped
 from tf.transformations import euler_from_quaternion
 
-# This is the detector for backapck and person's
 
 class YoloDetector():
-    # These are top level settings that are easy to adjust
 
     # ROS topics
     RAW_TOPIC = "/depthai_node/image/compressed"
@@ -32,13 +30,14 @@ class YoloDetector():
     UAV_POSE_TOPIC = "/mavros/vision_pose/pose"
     WORLD_POSITION_TOPIC = "/yolo/world_position"
 
-    # YOLO settings
+    # Camera / YOLO settings
     CONFIDENCE = 0.80
     IOU = 0.50
     CAMERA_FPS = 15.0
-    JPEG_QUALITY = 85
-    RAW_WIDTH = 640
-    RAW_HEIGHT = 360
+    JPEG_QUALITY = 95
+
+    RAW_WIDTH = 960
+    RAW_HEIGHT = 540
 
     # Detection filtering
     FILTER_WINDOW = 5
@@ -47,11 +46,10 @@ class YoloDetector():
     # ROI publication filtering
     ROI_FRAMES_REQUIRED = 3
 
-    # Hard-coded ROI fallback if OptiTrack/world position is unavailable
+    # Hard-coded ROI fallback
     PERSON_FALLBACK_ROI = [-1.0, 1.0, 2.0]
     BACKPACK_FALLBACK_ROI = [1.0, 1.0, 2.0]
 
-    # World position can be turned off for flight if needed
     ENABLE_WORLD_POSITION = True
     GROUND_Z = 0.0
 
@@ -65,22 +63,36 @@ class YoloDetector():
 
 
     def __init__(self):
-        # Model files are set in the launch file
+
         self.blob_path = rospy.get_param("~blob_path")
         self.config_path = rospy.get_param("~config_path")
 
-        # Allow the main settings to also be changed from the launch file
         self.confidence = float(
-            rospy.get_param("~confidence", self.CONFIDENCE)
+            rospy.get_param(
+                "~confidence",
+                self.CONFIDENCE
+            )
         )
+
         self.iou = float(
-            rospy.get_param("~iou", self.IOU)
+            rospy.get_param(
+                "~iou",
+                self.IOU
+            )
         )
+
         self.camera_fps = float(
-            rospy.get_param("~camera_fps", self.CAMERA_FPS)
+            rospy.get_param(
+                "~camera_fps",
+                self.CAMERA_FPS
+            )
         )
+
         self.jpeg_quality = int(
-            rospy.get_param("~jpeg_quality", self.JPEG_QUALITY)
+            rospy.get_param(
+                "~jpeg_quality",
+                self.JPEG_QUALITY
+            )
         )
 
         self.enable_world_position = rospy.get_param(
@@ -88,98 +100,104 @@ class YoloDetector():
             self.ENABLE_WORLD_POSITION
         )
 
-        # ROS topics can also be changed from the launch file
-        self.raw_topic = rospy.get_param("~raw_topic", self.RAW_TOPIC)
-        self.output_topic = rospy.get_param(
-            "~annotated_topic", self.OUTPUT_TOPIC
-        )
-        self.detection_topic = rospy.get_param(
-            "~detection_topic", self.DETECTION_TOPIC
-        )
-        self.camera_info_topic = rospy.get_param(
-            "~camera_info_topic", self.CAMERA_INFO_TOPIC
+        self.raw_topic = rospy.get_param(
+            "~raw_topic",
+            self.RAW_TOPIC
         )
 
-        # Current UAV pose and camera calibration
+        self.output_topic = rospy.get_param(
+            "~annotated_topic",
+            self.OUTPUT_TOPIC
+        )
+
+        self.detection_topic = rospy.get_param(
+            "~detection_topic",
+            self.DETECTION_TOPIC
+        )
+
+        self.camera_info_topic = rospy.get_param(
+            "~camera_info_topic",
+            self.CAMERA_INFO_TOPIC
+        )
+
         self.uav_pose = None
         self.camera_matrix = None
-
-        # ROI publication starts disabled
         self.roi_enabled = False
 
-        # Detection history for filtering false positives
         self.detection_history = deque(
             maxlen=self.FILTER_WINDOW
         )
 
-        # Read model config
-        with open(self.config_path, "r") as config_file:
-            self.config = json.load(config_file)
+        with open(
+            self.config_path,
+            "r"
+        ) as config_file:
+            self.config = json.load(
+                config_file
+            )
 
         self.labels = self.get_labels()
-        self.input_width, self.input_height = self.get_input_size()
 
-        # Raw OAK-D image output
+        self.input_width, self.input_height = (
+            self.get_input_size()
+        )
+
+        # ROS publishers
         self.raw_pub = rospy.Publisher(
             self.raw_topic,
             CompressedImage,
             queue_size=1
         )
 
-        # YOLO processed image output
         self.yolo_pub = rospy.Publisher(
             self.output_topic,
             CompressedImage,
             queue_size=1
         )
 
-        # Text output of current detections
         self.detection_pub = rospy.Publisher(
             self.detection_topic,
             String,
             queue_size=10
         )
 
-        # Camera calibration output
         self.camera_info_pub = rospy.Publisher(
             self.camera_info_topic,
             CameraInfo,
             queue_size=1
         )
 
-        # UAV pose for calculating target world position
-        self.uav_pose_sub = rospy.Subscriber(
-            self.UAV_POSE_TOPIC,
-            PoseStamped,
-            self.uav_pose_callback
-        )
-
-        # Listen for Guidance permission to publish ROI commands
-        self.roi_enable_sub = rospy.Subscriber(
-            self.ROI_ENABLE_TOPIC,
-            Bool,
-            self.roi_enable_callback
-        )
-
-        # YOLO target world position
         self.world_position_pub = rospy.Publisher(
             self.WORLD_POSITION_TOPIC,
             PointStamped,
             queue_size=10
         )
 
-        # ROI output
         self.roi_pub = rospy.Publisher(
             self.ROI_TOPIC,
             PoseStamped,
             queue_size=10
         )
 
-        # ROI target type
         self.roi_type_pub = rospy.Publisher(
             self.ROI_TYPE_TOPIC,
             String,
             queue_size=10
+        )
+
+        # ROS subscribers
+        self.uav_pose_sub = rospy.Subscriber(
+            self.UAV_POSE_TOPIC,
+            PoseStamped,
+            self.uav_pose_callback,
+            queue_size=1
+        )
+
+        self.roi_enable_sub = rospy.Subscriber(
+            self.ROI_ENABLE_TOPIC,
+            Bool,
+            self.roi_enable_callback,
+            queue_size=1
         )
 
         self.roi_triggered = {
@@ -187,27 +205,34 @@ class YoloDetector():
             "backpack": False
         }
 
-        # Consecutive detections required before publishing an ROI
         self.roi_detection_counts = {
             "person": 0,
             "backpack": 0
         }
 
-        # Build the OAK-D pipeline
         self.pipeline = self.create_pipeline()
 
         rospy.loginfo("YOLO detector started")
         rospy.loginfo("Model: {}".format(self.blob_path))
+
         rospy.loginfo(
-            "Input size: {}x{}".format(
+            "Camera: {}x{} @ {:.1f} FPS".format(
+                self.RAW_WIDTH,
+                self.RAW_HEIGHT,
+                self.camera_fps
+            )
+        )
+
+        rospy.loginfo(
+            "YOLO input: {}x{}".format(
                 self.input_width,
                 self.input_height
             )
         )
-        rospy.loginfo("Classes: {}".format(", ".join(self.labels)))
+
         rospy.loginfo(
-            "YOLO world position: {}".format(
-                "enabled" if self.enable_world_position else "disabled"
+            "Classes: {}".format(
+                ", ".join(self.labels)
             )
         )
 
@@ -217,115 +242,223 @@ class YoloDetector():
 
 
     def roi_enable_callback(self, msg):
+
         self.roi_enabled = msg.data
 
         if self.roi_enabled:
-            rospy.loginfo("YOLO ROI publication enabled")
+            rospy.loginfo(
+                "YOLO ROI publication enabled"
+            )
 
 
     def get_labels(self):
-        # New Luxonis config format
-        labels = self.config.get("mappings", {}).get("labels", [])
+
+        labels = self.config.get(
+            "mappings",
+            {}
+        ).get(
+            "labels",
+            []
+        )
 
         if labels:
             return labels
 
-        # Older Luxonis config format
-        heads = self.config.get("model", {}).get("heads", [])
+        heads = self.config.get(
+            "model",
+            {}
+        ).get(
+            "heads",
+            []
+        )
 
         for head in heads:
-            labels = head.get("metadata", {}).get("classes", [])
+
+            labels = head.get(
+                "metadata",
+                {}
+            ).get(
+                "classes",
+                []
+            )
 
             if labels:
                 return labels
 
-        raise ValueError("No YOLO class labels found")
+        raise ValueError(
+            "No YOLO class labels found"
+        )
 
 
     def get_input_size(self):
-        # New Luxonis config format - for example 416x416
-        size = self.config.get("nn_config", {}).get("input_size")
+
+        size = self.config.get(
+            "nn_config",
+            {}
+        ).get(
+            "input_size"
+        )
 
         if size:
+
             width, height = size.split("x")
+
             return int(width), int(height)
 
-        # Older Luxonis config format
-        inputs = self.config.get("model", {}).get("inputs", [])
+        inputs = self.config.get(
+            "model",
+            {}
+        ).get(
+            "inputs",
+            []
+        )
 
         if inputs:
-            shape = inputs[0].get("shape", [])
 
-            # Shape is NCHW
+            shape = inputs[0].get(
+                "shape",
+                []
+            )
+
             if len(shape) == 4:
-                return int(shape[3]), int(shape[2])
 
-        raise ValueError("Could not find YOLO input size")
+                return (
+                    int(shape[3]),
+                    int(shape[2])
+                )
+
+        raise ValueError(
+            "Could not find YOLO input size"
+        )
 
 
     def create_pipeline(self):
-        # Main DepthAI pipeline
+
         pipeline = dai.Pipeline()
 
         # OAK-D RGB camera
-        camera = pipeline.create(dai.node.ColorCamera)
+        camera = pipeline.create(
+            dai.node.ColorCamera
+        )
+
         camera.setResolution(
             dai.ColorCameraProperties.SensorResolution.THE_1080_P
         )
+
         camera.setPreviewSize(
             self.RAW_WIDTH,
             self.RAW_HEIGHT
         )
-        camera.setPreviewKeepAspectRatio(True)
-        camera.setInterleaved(False)
+
+        camera.setPreviewKeepAspectRatio(
+            True
+        )
+
+        camera.setInterleaved(
+            False
+        )
+
         camera.setColorOrder(
             dai.ColorCameraProperties.ColorOrder.BGR
         )
-        camera.setFps(self.camera_fps)
 
-        # Letterbox the full 16:9 image for the square YOLO input
-        yolo_manip = pipeline.create(dai.node.ImageManip)
+        camera.setFps(
+            self.camera_fps
+        )
+
+        # Full 16:9 image -> 416x416 letterboxed YOLO input
+        yolo_manip = pipeline.create(
+            dai.node.ImageManip
+        )
+
         yolo_manip.initialConfig.setResizeThumbnail(
             self.input_width,
             self.input_height
         )
+
         yolo_manip.initialConfig.setFrameType(
             dai.ImgFrame.Type.BGR888p
         )
-        camera.preview.link(yolo_manip.inputImage)
 
-        # YOLO runs directly on the OAK-D Myriad X
-        yolo = pipeline.create(dai.node.YoloDetectionNetwork)
-        yolo.setBlobPath(self.blob_path)
-        yolo.setConfidenceThreshold(self.confidence)
-        yolo.setIouThreshold(self.iou)
-        yolo.setNumClasses(len(self.labels))
+        camera.preview.link(
+            yolo_manip.inputImage
+        )
+
+        # YOLO
+        yolo = pipeline.create(
+            dai.node.YoloDetectionNetwork
+        )
+
+        yolo.setBlobPath(
+            self.blob_path
+        )
+
+        yolo.setConfidenceThreshold(
+            self.confidence
+        )
+
+        yolo.setIouThreshold(
+            self.iou
+        )
+
+        yolo.setNumClasses(
+            len(self.labels)
+        )
+
         yolo.setCoordinateSize(4)
         yolo.setNumInferenceThreads(2)
 
         yolo.input.setBlocking(False)
         yolo.input.setQueueSize(1)
 
-        yolo_manip.out.link(yolo.input)
+        yolo_manip.out.link(
+            yolo.input
+        )
 
-        # Send the full aspect-correct camera image back to the Pi
-        raw_output = pipeline.create(dai.node.XLinkOut)
-        raw_output.setStreamName("raw_frames")
-        camera.preview.link(raw_output.input)
+        # Raw camera output
+        raw_output = pipeline.create(
+            dai.node.XLinkOut
+        )
 
-        # Send YOLO detections back to the Pi
-        detection_output = pipeline.create(dai.node.XLinkOut)
-        detection_output.setStreamName("detections")
-        yolo.out.link(detection_output.input)
+        raw_output.setStreamName(
+            "raw_frames"
+        )
+
+        camera.preview.link(
+            raw_output.input
+        )
+
+        # YOLO detections
+        detection_output = pipeline.create(
+            dai.node.XLinkOut
+        )
+
+        detection_output.setStreamName(
+            "detections"
+        )
+
+        yolo.out.link(
+            detection_output.input
+        )
 
         return pipeline
 
 
-    def pixel_to_world(self, cX, cY, frame_width, frame_height):
+    def pixel_to_world(
+        self,
+        cX,
+        cY,
+        frame_width,
+        frame_height
+    ):
+
         if not self.enable_world_position:
             return None
 
-        if self.uav_pose is None or self.camera_matrix is None:
+        if (
+            self.uav_pose is None
+            or self.camera_matrix is None
+        ):
             return None
 
         fx = self.camera_matrix[0, 0]
@@ -335,7 +468,6 @@ class YoloDetector():
 
         pose = self.uav_pose.pose
 
-        # Camera height above the ground
         camera_z = (
             pose.position.z
             + self.CAMERA_OFFSET[2]
@@ -346,7 +478,6 @@ class YoloDetector():
             - self.GROUND_Z
         )
 
-        # Pixel position relative to optical centre
         image_right = (
             (cX - cx) / fx
         ) * ground_distance
@@ -355,7 +486,7 @@ class YoloDetector():
             (cY - cy) / fy
         ) * ground_distance
 
-        # Correct camera orientation:
+        # Camera orientation:
         # image top    = UAV +X
         # image bottom = UAV -X
         # image left   = UAV +Y
@@ -370,7 +501,6 @@ class YoloDetector():
             + self.CAMERA_OFFSET[1]
         )
 
-        # Current UAV yaw in the OptiTrack/world frame
         quaternion = [
             pose.orientation.x,
             pose.orientation.y,
@@ -385,7 +515,6 @@ class YoloDetector():
         cos_yaw = math.cos(yaw)
         sin_yaw = math.sin(yaw)
 
-        # UAV/body frame -> OptiTrack/world frame
         world_x = (
             pose.position.x
             + cos_yaw * body_x
@@ -398,16 +527,18 @@ class YoloDetector():
             + cos_yaw * body_y
         )
 
-        target_world = np.array([
+        return np.array([
             world_x,
             world_y,
             self.GROUND_Z
         ])
 
-        return target_world
 
+    def publish_world_position(
+        self,
+        world_position
+    ):
 
-    def publish_world_position(self, world_position):
         msg = PointStamped()
 
         msg.header.stamp = rospy.Time.now()
@@ -417,7 +548,9 @@ class YoloDetector():
         msg.point.y = float(world_position[1])
         msg.point.z = float(world_position[2])
 
-        self.world_position_pub.publish(msg)
+        self.world_position_pub.publish(
+            msg
+        )
 
 
     def publish_roi(
@@ -432,37 +565,46 @@ class YoloDetector():
         label_lower = label.lower()
 
         if label_lower == "person":
+
             target_char = "P"
             fallback_roi = self.PERSON_FALLBACK_ROI
 
         elif label_lower == "backpack":
+
             target_char = "B"
             fallback_roi = self.BACKPACK_FALLBACK_ROI
 
         else:
             return
 
-        if self.roi_triggered.get(label_lower, False):
+        if self.roi_triggered.get(
+            label_lower,
+            False
+        ):
             return
 
-        # Do not publish an ROI until this target has been
-        # detected for enough consecutive frames
         if (
-            self.roi_detection_counts.get(label_lower, 0)
+            self.roi_detection_counts.get(
+                label_lower,
+                0
+            )
             < self.ROI_FRAMES_REQUIRED
         ):
             return
 
         if world_position is None:
+
             roi_position = fallback_roi
 
             rospy.logwarn(
-                "{} world position unavailable - using hard-coded ROI".format(
+                "{} world position unavailable - "
+                "using hard-coded ROI".format(
                     target_char
                 )
             )
 
         else:
+
             roi_position = world_position
 
         roi_msg = PoseStamped()
@@ -470,139 +612,231 @@ class YoloDetector():
         roi_msg.header.stamp = rospy.Time.now()
         roi_msg.header.frame_id = "map"
 
-        roi_msg.pose.position.x = float(roi_position[0])
-        roi_msg.pose.position.y = float(roi_position[1])
-        roi_msg.pose.position.z = 2.0
+        roi_msg.pose.position.x = float(
+            roi_position[0]
+        )
 
-        roi_msg.pose.orientation.x = 0.0
-        roi_msg.pose.orientation.y = 0.0
-        roi_msg.pose.orientation.z = 0.0
+        roi_msg.pose.position.y = float(
+            roi_position[1]
+        )
+
+        roi_msg.pose.position.z = 2.0
         roi_msg.pose.orientation.w = 1.0
 
-        self.roi_type_pub.publish(target_char)
-        self.roi_pub.publish(roi_msg)
+        self.roi_type_pub.publish(
+            target_char
+        )
 
-        self.roi_triggered[label_lower] = True
+        self.roi_pub.publish(
+            roi_msg
+        )
+
+        self.roi_triggered[
+            label_lower
+        ] = True
 
         rospy.logwarn(
-            "{} ROI published to ({:.2f}, {:.2f}, {:.2f})".format(
+            "{} ROI published to "
+            "({:.2f}, {:.2f}, 2.00)".format(
                 target_char,
                 roi_position[0],
-                roi_position[1],
-                2.0
+                roi_position[1]
             )
         )
 
 
-    def draw_detections(self, frame, detections):
-        # Draw YOLO detections onto the full aspect-correct image
+    def draw_detections(
+        self,
+        frame,
+        detections
+    ):
+
         height, width = frame.shape[:2]
+
         detection_log = []
 
-        # YOLO receives a letterboxed version of the full camera image
+        # Reverse YOLO letterboxing
         scale = min(
             self.input_width / float(width),
             self.input_height / float(height)
         )
 
-        resized_width = int(round(width * scale))
-        resized_height = int(round(height * scale))
+        resized_width = int(
+            round(width * scale)
+        )
 
-        pad_x = (self.input_width - resized_width) / 2.0
-        pad_y = (self.input_height - resized_height) / 2.0
+        resized_height = int(
+            round(height * scale)
+        )
 
-        # Find which classes are present in this frame
+        pad_x = (
+            self.input_width
+            - resized_width
+        ) / 2.0
+
+        pad_y = (
+            self.input_height
+            - resized_height
+        ) / 2.0
+
         current_classes = []
 
         for detection in detections:
-            class_id = int(detection.label)
+
+            class_id = int(
+                detection.label
+            )
 
             if class_id < len(self.labels):
                 label = self.labels[class_id]
             else:
                 label = "Unknown"
 
-            current_classes.append(label)
+            current_classes.append(
+                label
+            )
 
-        # Add this frame to the rolling detection history
         self.detection_history.append(
             set(current_classes)
         )
 
-        # Count consecutive detections separately for ROI publication
-        current_class_set = set(current_classes)
+        current_class_set = set(
+            current_classes
+        )
 
         for target_class in self.roi_detection_counts:
-            if target_class in current_class_set:
-                self.roi_detection_counts[target_class] += 1
-            else:
-                self.roi_detection_counts[target_class] = 0
 
-        # Only accept a class if it has appeared in enough recent frames
+            if target_class in current_class_set:
+
+                self.roi_detection_counts[
+                    target_class
+                ] += 1
+
+            else:
+
+                self.roi_detection_counts[
+                    target_class
+                ] = 0
+
         accepted_classes = set()
 
         for class_name in self.labels:
+
             count = sum(
                 class_name in frame_classes
-                for frame_classes in self.detection_history
+                for frame_classes
+                in self.detection_history
             )
 
             if count >= self.FRAMES_REQUIRED:
-                accepted_classes.add(class_name)
+
+                accepted_classes.add(
+                    class_name
+                )
 
         for detection in detections:
-            class_id = int(detection.label)
-            confidence = float(detection.confidence)
+
+            class_id = int(
+                detection.label
+            )
+
+            confidence = float(
+                detection.confidence
+            )
 
             if class_id < len(self.labels):
                 label = self.labels[class_id]
             else:
                 label = "Unknown"
 
-            # Ignore detections that have not passed temporal filtering
             if label not in accepted_classes:
                 continue
 
-            # Detection coordinates are relative to the 416x416 letterboxed image
-            nn_x1 = detection.xmin * self.input_width
-            nn_y1 = detection.ymin * self.input_height
-            nn_x2 = detection.xmax * self.input_width
-            nn_y2 = detection.ymax * self.input_height
+            nn_x1 = (
+                detection.xmin
+                * self.input_width
+            )
 
-            # Remove letterbox padding and map back to the full raw image
-            x1 = int((nn_x1 - pad_x) / scale)
-            y1 = int((nn_y1 - pad_y) / scale)
-            x2 = int((nn_x2 - pad_x) / scale)
-            y2 = int((nn_y2 - pad_y) / scale)
+            nn_y1 = (
+                detection.ymin
+                * self.input_height
+            )
 
-            x1 = max(0, min(width - 1, x1))
-            y1 = max(0, min(height - 1, y1))
-            x2 = max(0, min(width - 1, x2))
-            y2 = max(0, min(height - 1, y2))
+            nn_x2 = (
+                detection.xmax
+                * self.input_width
+            )
+
+            nn_y2 = (
+                detection.ymax
+                * self.input_height
+            )
+
+            x1 = int(
+                (nn_x1 - pad_x)
+                / scale
+            )
+
+            y1 = int(
+                (nn_y1 - pad_y)
+                / scale
+            )
+
+            x2 = int(
+                (nn_x2 - pad_x)
+                / scale
+            )
+
+            y2 = int(
+                (nn_y2 - pad_y)
+                / scale
+            )
+
+            x1 = max(
+                0,
+                min(width - 1, x1)
+            )
+
+            y1 = max(
+                0,
+                min(height - 1, y1)
+            )
+
+            x2 = max(
+                0,
+                min(width - 1, x2)
+            )
+
+            y2 = max(
+                0,
+                min(height - 1, y2)
+            )
 
             if x2 <= x1 or y2 <= y1:
                 continue
 
-            # Centre of detected object in the full raw image
             cX = (x1 + x2) // 2
             cY = (y1 + y2) // 2
 
-            # Calculate world position if enabled
-            world_position = self.pixel_to_world(
-                cX,
-                cY,
-                width,
-                height
+            world_position = (
+                self.pixel_to_world(
+                    cX,
+                    cY,
+                    width,
+                    height
+                )
             )
 
             if world_position is not None:
+
                 self.publish_world_position(
                     world_position
                 )
 
                 rospy.loginfo_throttle(
                     1.0,
-                    "YOLO {} world: x={:.2f}, y={:.2f}, z={:.2f}".format(
+                    "YOLO {} world: "
+                    "x={:.2f}, y={:.2f}, z={:.2f}".format(
                         label,
                         world_position[0],
                         world_position[1],
@@ -610,13 +844,11 @@ class YoloDetector():
                     )
                 )
 
-            # Publish calculated ROI or hard-coded fallback
             self.publish_roi(
                 label,
                 world_position
             )
 
-            # Save accepted detection as text for ROS
             detection_log.append(
                 "{}:{:.2f}@({},{})".format(
                     label,
@@ -626,7 +858,6 @@ class YoloDetector():
                 )
             )
 
-            # Detection box
             cv2.rectangle(
                 frame,
                 (x1, y1),
@@ -635,7 +866,6 @@ class YoloDetector():
                 2
             )
 
-            # Detection centre point
             cv2.circle(
                 frame,
                 (cX, cY),
@@ -644,11 +874,16 @@ class YoloDetector():
                 -1
             )
 
-            # Class and confidence
             cv2.putText(
                 frame,
-                "{} {:.2f}".format(label, confidence),
-                (x1, max(y1 - 8, 20)),
+                "{} {:.2f}".format(
+                    label,
+                    confidence
+                ),
+                (
+                    x1,
+                    max(y1 - 8, 20)
+                ),
                 cv2.FONT_HERSHEY_SIMPLEX,
                 0.6,
                 (255, 0, 0),
@@ -658,94 +893,155 @@ class YoloDetector():
         return detection_log
 
 
-    def publish_image(self, publisher, frame):
-        # Convert OpenCV image to ROS CompressedImage
+    def make_image_msg(
+        self,
+        frame,
+        stamp
+    ):
+        """
+        Encode an image using the timestamp belonging to
+        the source camera frame.
+        """
+
         success, encoded_image = cv2.imencode(
             ".jpg",
             frame,
-            [cv2.IMWRITE_JPEG_QUALITY, self.jpeg_quality]
+            [
+                cv2.IMWRITE_JPEG_QUALITY,
+                self.jpeg_quality
+            ]
         )
 
         if not success:
-            rospy.logwarn("Failed to encode YOLO image")
-            return
+            return None
 
         msg = CompressedImage()
-        msg.header.stamp = rospy.Time.now()
+
+        msg.header.stamp = stamp
         msg.header.frame_id = "oak_rgb_camera"
+
         msg.format = "jpeg"
+
         msg.data = encoded_image.tobytes()
 
-        publisher.publish(msg)
+        return msg
 
 
     def run(self):
-        # Start the DepthAI pipeline on the OAK-D
-        with dai.Device(self.pipeline) as device:
 
-            # Read RGB camera calibration for the ArUco detector
-            calibration = device.readCalibration()
+        with dai.Device(
+            self.pipeline
+        ) as device:
 
-            intrinsics = calibration.getCameraIntrinsics(
-                dai.CameraBoardSocket.CAM_A,
-                self.RAW_WIDTH,
-                self.RAW_HEIGHT
+            calibration = (
+                device.readCalibration()
             )
 
-            distortion = calibration.getDistortionCoefficients(
-                dai.CameraBoardSocket.CAM_A
+            intrinsics = (
+                calibration.getCameraIntrinsics(
+                    dai.CameraBoardSocket.CAM_A,
+                    self.RAW_WIDTH,
+                    self.RAW_HEIGHT
+                )
+            )
+
+            distortion = (
+                calibration.getDistortionCoefficients(
+                    dai.CameraBoardSocket.CAM_A
+                )
             )
 
             camera_info = CameraInfo()
+
             camera_info.width = self.RAW_WIDTH
             camera_info.height = self.RAW_HEIGHT
             camera_info.distortion_model = "plumb_bob"
-            camera_info.D = list(distortion)
+
+            camera_info.D = list(
+                distortion
+            )
+
             camera_info.K = [
-                intrinsics[0][0], intrinsics[0][1], intrinsics[0][2],
-                intrinsics[1][0], intrinsics[1][1], intrinsics[1][2],
-                intrinsics[2][0], intrinsics[2][1], intrinsics[2][2]
+                intrinsics[0][0],
+                intrinsics[0][1],
+                intrinsics[0][2],
+                intrinsics[1][0],
+                intrinsics[1][1],
+                intrinsics[1][2],
+                intrinsics[2][0],
+                intrinsics[2][1],
+                intrinsics[2][2]
             ]
 
-            # Same calibration is used for YOLO world position
             self.camera_matrix = np.array(
                 camera_info.K,
                 dtype=np.float64
-            ).reshape((3, 3))
-
-            raw_frame_queue = device.getOutputQueue(
-                "raw_frames",
-                maxSize=1,
-                blocking=False
+            ).reshape(
+                (3, 3)
             )
 
-            detection_queue = device.getOutputQueue(
-                "detections",
-                maxSize=1,
-                blocking=False
+            raw_frame_queue = (
+                device.getOutputQueue(
+                    "raw_frames",
+                    maxSize=1,
+                    blocking=False
+                )
+            )
+
+            detection_queue = (
+                device.getOutputQueue(
+                    "detections",
+                    maxSize=1,
+                    blocking=False
+                )
             )
 
             rospy.loginfo(
-                "OAK-D connected - YOLO running on Myriad X"
+                "OAK-D connected - "
+                "YOLO running on Myriad X"
             )
 
             last_time = time.time()
             fps = 0.0
 
             while not rospy.is_shutdown():
-                raw_frame = raw_frame_queue.get().getCvFrame()
-                detections = detection_queue.get().detections
 
-                processed_frame = raw_frame.copy()
-
-                detection_log = self.draw_detections(
-                    processed_frame,
-                    detections
+                # Get one camera frame
+                raw_packet = (
+                    raw_frame_queue.get()
                 )
 
-                # Calculate current processing FPS
+                raw_frame = (
+                    raw_packet.getCvFrame()
+                )
+
+                detections = (
+                    detection_queue.get()
+                    .detections
+                )
+
+                # One ROS timestamp for BOTH versions
+                # of this camera frame.
+                frame_stamp = rospy.Time.now()
+
+                processed_frame = (
+                    raw_frame.copy()
+                )
+
+                detection_log = (
+                    self.draw_detections(
+                        processed_frame,
+                        detections
+                    )
+                )
+
                 current_time = time.time()
-                frame_time = current_time - last_time
+
+                frame_time = (
+                    current_time
+                    - last_time
+                )
+
                 last_time = current_time
 
                 if frame_time > 0:
@@ -764,32 +1060,75 @@ class YoloDetector():
                     2
                 )
 
-                # Publish raw and processed camera images
-                self.publish_image(self.raw_pub, raw_frame)
-                self.publish_image(self.yolo_pub, processed_frame)
+                # Encode both images before publishing.
+                # Both carry exactly the same timestamp.
+                raw_msg = self.make_image_msg(
+                    raw_frame,
+                    frame_stamp
+                )
 
-                # Publish camera calibration for ArUco pose estimation
-                camera_info.header.stamp = rospy.Time.now()
-                camera_info.header.frame_id = "oak_rgb_camera"
-                self.camera_info_pub.publish(camera_info)
+                yolo_msg = self.make_image_msg(
+                    processed_frame,
+                    frame_stamp
+                )
 
-                # Publish detection text
-                detection_text = "; ".join(detection_log)
-                self.detection_pub.publish(detection_text)
+                if raw_msg is not None:
+                    self.raw_pub.publish(
+                        raw_msg
+                    )
+
+                if yolo_msg is not None:
+                    self.yolo_pub.publish(
+                        yolo_msg
+                    )
+
+                # CameraInfo gets the same timestamp too
+                camera_info.header.stamp = (
+                    frame_stamp
+                )
+
+                camera_info.header.frame_id = (
+                    "oak_rgb_camera"
+                )
+
+                self.camera_info_pub.publish(
+                    camera_info
+                )
+
+                detection_text = "; ".join(
+                    detection_log
+                )
+
+                self.detection_pub.publish(
+                    detection_text
+                )
 
                 if detection_log:
+
                     rospy.loginfo_throttle(
                         1.0,
-                        "YOLO detections: {}".format(detection_text)
+                        "YOLO detections: {}".format(
+                            detection_text
+                        )
                     )
 
 
 if __name__ == "__main__":
-    rospy.init_node("dai_yolo_publisher")
+
+    rospy.init_node(
+        "dai_yolo_publisher"
+    )
 
     try:
+
         detector = YoloDetector()
+
         detector.run()
 
     except Exception as e:
-        rospy.logerr("YOLO detector error: {}".format(e))
+
+        rospy.logerr(
+            "YOLO detector error: {}".format(
+                e
+            )
+        )

@@ -22,8 +22,8 @@
 
         <param name="confidence" value="0.92" />
         <param name="iou" value="0.50" />
-        <param name="camera_fps" value="15.0" />
-        <param name="jpeg_quality" value="85" />
+        <param name="camera_fps" value="12.0" />
+        <param name="jpeg_quality" value="95" />
 
         <param
             name="raw_topic"
