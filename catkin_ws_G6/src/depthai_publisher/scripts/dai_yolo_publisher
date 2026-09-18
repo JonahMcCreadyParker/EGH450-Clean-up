@@ -42,7 +42,7 @@ class YoloDetector():
 
     # Detection filtering
     FILTER_WINDOW = 5
-    FRAMES_REQUIRED = 2
+    FRAMES_REQUIRED = 3
 
     # ROI publication filtering
     ROI_FRAMES_REQUIRED = 3

@@ -35,7 +35,7 @@ class ArucoDetector():
     # Camera position relative to OptiTrack rigid body origin
     # x = forward, y = left, z = up
     CAMERA_OFFSET = np.array([
-        0.10,      # Camera is 10 cm infront
+        0.10,      # Camera is 10 cm in front
         0.00,
         -0.16      # Camera is 16 cm below
     ])
@@ -44,9 +44,14 @@ class ArucoDetector():
     ARUCO_DICT = cv2.aruco.DICT_5X5_100
     MARKER_LENGTH = 0.200  # metres
 
+    # Require several detections before using the landing marker
+    # This lets us loosen ArUco detection without making landing unsafe
+    LANDING_FRAMES_REQUIRED = 3
+
     # HUD setup
     SHOW_CROSSHAIR = True
     SHOW_DISTANCE_TEXT = True
+    SHOW_WORLD_AXES = True
 
     CROSSHAIR_SIZE = 18
     CROSSHAIR_GAP = 6
@@ -72,16 +77,16 @@ class ArucoDetector():
             )
         )
 
+        # Number of consecutive frames containing the landing marker
+        self.landing_detection_count = 0
+
         # Latest raw and YOLO images
         self.latest_raw_frame = None
 
         self.br = CvBridge()
 
         # ArUco detector setup
-        if hasattr(
-            cv2.aruco,
-            "getPredefinedDictionary"
-        ):
+        if hasattr(cv2.aruco, "getPredefinedDictionary"):
             self.aruco_dict = cv2.aruco.getPredefinedDictionary(
                 self.ARUCO_DICT
             )
@@ -90,27 +95,110 @@ class ArucoDetector():
                 self.ARUCO_DICT
             )
 
-        if hasattr(
-            cv2.aruco,
-            "DetectorParameters_create"
-        ):
+        if hasattr(cv2.aruco, "DetectorParameters_create"):
             self.aruco_params = cv2.aruco.DetectorParameters_create()
         else:
             self.aruco_params = cv2.aruco.DetectorParameters()
 
-        # Improve detection of smaller and more distant ArUco markers
+        # -------------------------------------------------------------
+        # More permissive ArUco detector settings
+        # -------------------------------------------------------------
+
+        # Search across a much wider range of local threshold sizes.
+        # Helps with uneven lighting, distance and partial shadows.
         self.aruco_params.adaptiveThreshWinSizeMin = 3
-        self.aruco_params.adaptiveThreshWinSizeMax = 53
+        self.aruco_params.adaptiveThreshWinSizeMax = 101
         self.aruco_params.adaptiveThreshWinSizeStep = 4
 
-        self.aruco_params.minMarkerPerimeterRate = 0.015
-        self.aruco_params.maxMarkerPerimeterRate = 4.0
+        # Allow much smaller markers in the frame.
+        # Default/current value was 0.015.
+        self.aruco_params.minMarkerPerimeterRate = 0.008
 
-        self.aruco_params.polygonalApproxAccuracyRate = 0.03
+        # Allow very large markers too.
+        self.aruco_params.maxMarkerPerimeterRate = 6.0
 
+        # Permit somewhat less-perfect quadrilateral shapes.
+        # Useful when viewed at an angle or during UAV motion.
+        self.aruco_params.polygonalApproxAccuracyRate = 0.05
+
+        # Allow candidate corners to be closer together.
+        if hasattr(
+            self.aruco_params,
+            "minCornerDistanceRate"
+        ):
+            self.aruco_params.minCornerDistanceRate = 0.02
+
+        # Allow markers closer to the edge of the image.
+        if hasattr(
+            self.aruco_params,
+            "minDistanceToBorder"
+        ):
+            self.aruco_params.minDistanceToBorder = 1
+
+        # Allow nearby marker candidates.
+        if hasattr(
+            self.aruco_params,
+            "minMarkerDistanceRate"
+        ):
+            self.aruco_params.minMarkerDistanceRate = 0.01
+
+        # Subpixel refinement improves corner accuracy after detection.
         self.aruco_params.cornerRefinementMethod = (
             cv2.aruco.CORNER_REFINE_SUBPIX
         )
+
+        if hasattr(
+            self.aruco_params,
+            "cornerRefinementWinSize"
+        ):
+            self.aruco_params.cornerRefinementWinSize = 7
+
+        if hasattr(
+            self.aruco_params,
+            "cornerRefinementMaxIterations"
+        ):
+            self.aruco_params.cornerRefinementMaxIterations = 50
+
+        if hasattr(
+            self.aruco_params,
+            "cornerRefinementMinAccuracy"
+        ):
+            self.aruco_params.cornerRefinementMinAccuracy = 0.05
+
+        # Use more pixels when decoding each marker cell.
+        if hasattr(
+            self.aruco_params,
+            "perspectiveRemovePixelPerCell"
+        ):
+            self.aruco_params.perspectiveRemovePixelPerCell = 8
+
+        # Use slightly more of each cell during decoding.
+        if hasattr(
+            self.aruco_params,
+            "perspectiveRemoveIgnoredMarginPerCell"
+        ):
+            self.aruco_params.perspectiveRemoveIgnoredMarginPerCell = 0.05
+
+        # Permit a noisier black border.
+        if hasattr(
+            self.aruco_params,
+            "maxErroneousBitsInBorderRate"
+        ):
+            self.aruco_params.maxErroneousBitsInBorderRate = 0.45
+
+        # Allow more dictionary error correction.
+        if hasattr(
+            self.aruco_params,
+            "errorCorrectionRate"
+        ):
+            self.aruco_params.errorCorrectionRate = 0.80
+
+        # Detect markers with reversed black/white polarity too.
+        if hasattr(
+            self.aruco_params,
+            "detectInvertedMarker"
+        ):
+            self.aruco_params.detectInvertedMarker = True
 
         # Camera calibration
         self.camera_info_sub = rospy.Subscriber(
@@ -194,21 +282,9 @@ class ArucoDetector():
         self.roi_triggered = False
 
         rospy.loginfo("ArUco detector started")
-        rospy.loginfo(
-            "Raw input: {}".format(
-                self.FRAME_SUB_TOPIC
-            )
-        )
-        rospy.loginfo(
-            "YOLO input: {}".format(
-                self.YOLO_FRAME_TOPIC
-            )
-        )
-        rospy.loginfo(
-            "Output: {}".format(
-                self.OUTPUT_TOPIC
-            )
-        )
+        rospy.loginfo("Raw input: {}".format(self.FRAME_SUB_TOPIC))
+        rospy.loginfo("YOLO input: {}".format(self.YOLO_FRAME_TOPIC))
+        rospy.loginfo("Output: {}".format(self.OUTPUT_TOPIC))
         rospy.loginfo(
             "Landing ArUco ID: {}".format(
                 self.landing_aruco_id
@@ -217,6 +293,7 @@ class ArucoDetector():
 
 
     def camera_info_callback(self, msg):
+
         self.camera_matrix = np.array(
             msg.K,
             dtype=np.float64
@@ -237,13 +314,17 @@ class ArucoDetector():
 
 
     def roi_enable_callback(self, msg):
+
         self.roi_enabled = msg.data
 
         if self.roi_enabled:
-            rospy.loginfo("ArUco ROI publication enabled")
+            rospy.loginfo(
+                "ArUco ROI publication enabled"
+            )
 
 
     def raw_frame_callback(self, msg_in):
+
         try:
             self.latest_raw_frame = (
                 self.br.compressed_imgmsg_to_cv2(
@@ -256,6 +337,7 @@ class ArucoDetector():
 
 
     def yolo_frame_callback(self, msg_in):
+
         try:
             yolo_frame = (
                 self.br.compressed_imgmsg_to_cv2(
@@ -296,7 +378,6 @@ class ArucoDetector():
 
         pose = self.uav_pose.pose
 
-        # Current UAV yaw in the OptiTrack/world frame
         quaternion = [
             pose.orientation.x,
             pose.orientation.y,
@@ -311,7 +392,6 @@ class ArucoDetector():
         cos_yaw = math.cos(yaw)
         sin_yaw = math.sin(yaw)
 
-        # Correct camera orientation:
         # image top    = UAV +X
         # image bottom = UAV -X
         # image left   = UAV +Y
@@ -321,10 +401,16 @@ class ArucoDetector():
         # raw_x = image right
         # raw_y = image down
         # raw_z = optical axis
-        body_x = -raw_y + self.CAMERA_OFFSET[0]
-        body_y = -raw_x + self.CAMERA_OFFSET[1]
+        body_x = (
+            -raw_y
+            + self.CAMERA_OFFSET[0]
+        )
 
-        # Rotate UAV/body-frame position into OptiTrack/world frame
+        body_y = (
+            -raw_x
+            + self.CAMERA_OFFSET[1]
+        )
+
         world_x = (
             pose.position.x
             + cos_yaw * body_x
@@ -337,7 +423,6 @@ class ArucoDetector():
             + cos_yaw * body_y
         )
 
-        # ArUco markers are on the ground
         marker_world = np.array([
             world_x,
             world_y,
@@ -357,9 +442,17 @@ class ArucoDetector():
         msg.header.stamp = rospy.Time.now()
         msg.header.frame_id = "map"
 
-        msg.point.x = float(marker_world[0])
-        msg.point.y = float(marker_world[1])
-        msg.point.z = float(marker_world[2])
+        msg.point.x = float(
+            marker_world[0]
+        )
+
+        msg.point.y = float(
+            marker_world[1]
+        )
+
+        msg.point.z = float(
+            marker_world[2]
+        )
 
         self.world_position_pub.publish(
             msg
@@ -367,6 +460,7 @@ class ArucoDetector():
 
 
     def draw_crosshair(self, frame):
+
         height, width = frame.shape[:2]
 
         centre_x = width // 2
@@ -374,34 +468,209 @@ class ArucoDetector():
 
         cv2.line(
             frame,
-            (centre_x - self.CROSSHAIR_SIZE, centre_y),
-            (centre_x - self.CROSSHAIR_GAP, centre_y),
+            (
+                centre_x - self.CROSSHAIR_SIZE,
+                centre_y
+            ),
+            (
+                centre_x - self.CROSSHAIR_GAP,
+                centre_y
+            ),
             (0, 255, 255),
             1
         )
 
         cv2.line(
             frame,
-            (centre_x + self.CROSSHAIR_GAP, centre_y),
-            (centre_x + self.CROSSHAIR_SIZE, centre_y),
+            (
+                centre_x + self.CROSSHAIR_GAP,
+                centre_y
+            ),
+            (
+                centre_x + self.CROSSHAIR_SIZE,
+                centre_y
+            ),
             (0, 255, 255),
             1
         )
 
         cv2.line(
             frame,
-            (centre_x, centre_y - self.CROSSHAIR_SIZE),
-            (centre_x, centre_y - self.CROSSHAIR_GAP),
+            (
+                centre_x,
+                centre_y - self.CROSSHAIR_SIZE
+            ),
+            (
+                centre_x,
+                centre_y - self.CROSSHAIR_GAP
+            ),
             (0, 255, 255),
             1
         )
 
         cv2.line(
             frame,
-            (centre_x, centre_y + self.CROSSHAIR_GAP),
-            (centre_x, centre_y + self.CROSSHAIR_SIZE),
+            (
+                centre_x,
+                centre_y + self.CROSSHAIR_GAP
+            ),
+            (
+                centre_x,
+                centre_y + self.CROSSHAIR_SIZE
+            ),
             (0, 255, 255),
             1
+        )
+
+
+    def draw_world_axes(self, frame):
+
+        height, width = frame.shape[:2]
+
+        origin_x = width - 70
+        origin_y = 70
+        axis_length = 35
+
+        yellow = (0, 255, 255)
+
+        # Transparent compass background
+        overlay = frame.copy()
+
+        cv2.circle(
+            overlay,
+            (origin_x, origin_y),
+            50,
+            yellow,
+            -1
+        )
+
+        cv2.addWeighted(
+            overlay,
+            0.10,
+            frame,
+            0.90,
+            0,
+            frame
+        )
+
+        # Compass outline
+        cv2.circle(
+            frame,
+            (origin_x, origin_y),
+            50,
+            yellow,
+            1,
+            cv2.LINE_AA
+        )
+
+        # +X = top
+        cv2.arrowedLine(
+            frame,
+            (origin_x, origin_y),
+            (
+                origin_x,
+                origin_y - axis_length
+            ),
+            yellow,
+            2,
+            cv2.LINE_AA,
+            tipLength=0.25
+        )
+
+        cv2.putText(
+            frame,
+            "+X",
+            (
+                origin_x - 10,
+                origin_y - axis_length - 6
+            ),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.38,
+            yellow,
+            1,
+            cv2.LINE_AA
+        )
+
+        # +Y = left
+        cv2.arrowedLine(
+            frame,
+            (origin_x, origin_y),
+            (
+                origin_x - axis_length,
+                origin_y
+            ),
+            yellow,
+            2,
+            cv2.LINE_AA,
+            tipLength=0.25
+        )
+
+        cv2.putText(
+            frame,
+            "+Y",
+            (
+                origin_x - axis_length - 23,
+                origin_y + 4
+            ),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.38,
+            yellow,
+            1,
+            cv2.LINE_AA
+        )
+
+        # -Y = right
+        cv2.putText(
+            frame,
+            "-Y",
+            (
+                origin_x + axis_length + 4,
+                origin_y + 4
+            ),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.38,
+            yellow,
+            1,
+            cv2.LINE_AA
+        )
+
+        # -X = bottom
+        cv2.putText(
+            frame,
+            "-X",
+            (
+                origin_x - 10,
+                origin_y + axis_length + 15
+            ),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.38,
+            yellow,
+            1,
+            cv2.LINE_AA
+        )
+
+        # Centre
+        cv2.circle(
+            frame,
+            (origin_x, origin_y),
+            3,
+            yellow,
+            -1,
+            cv2.LINE_AA
+        )
+
+        cv2.putText(
+            frame,
+            "WORLD",
+            (
+                origin_x - 10,
+                origin_y + 65
+            ),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.38,
+            yellow,
+            1,
+            cv2.LINE_AA
         )
 
 
@@ -413,10 +682,13 @@ class ArucoDetector():
         marker_world,
         distance
     ):
+
         if marker_world is None:
             return
 
-        self.detected_marker_log[int(marker_id)] = {
+        self.detected_marker_log[
+            int(marker_id)
+        ] = {
             "px": cX,
             "py": cY,
             "x": float(marker_world[0]),
@@ -432,9 +704,12 @@ class ArucoDetector():
         for saved_id in sorted(
             self.detected_marker_log.keys()
         ):
-            marker = self.detected_marker_log[
-                saved_id
-            ]
+
+            marker = (
+                self.detected_marker_log[
+                    saved_id
+                ]
+            )
 
             log_lines.append(
                 "ID {}: pixel=({}, {}), "
@@ -458,17 +733,26 @@ class ArucoDetector():
             log_text
         )
 
-        # RViz text marker
         marker_msg = Marker()
 
         marker_msg.header.frame_id = "map"
-        marker_msg.header.stamp = rospy.Time.now()
+        marker_msg.header.stamp = (
+            rospy.Time.now()
+        )
 
-        marker_msg.ns = "aruco_detection_log"
+        marker_msg.ns = (
+            "aruco_detection_log"
+        )
+
         marker_msg.id = 0
 
-        marker_msg.type = Marker.TEXT_VIEW_FACING
-        marker_msg.action = Marker.ADD
+        marker_msg.type = (
+            Marker.TEXT_VIEW_FACING
+        )
+
+        marker_msg.action = (
+            Marker.ADD
+        )
 
         marker_msg.pose.position.x = 0.0
         marker_msg.pose.position.y = -0.8
@@ -501,7 +785,12 @@ class ArucoDetector():
                 output_frame
             )
 
-        # Marker detection uses clean camera frame
+        if self.SHOW_WORLD_AXES:
+            self.draw_world_axes(
+                output_frame
+            )
+
+        # Detection is performed on the clean camera image
         gray = cv2.cvtColor(
             frame,
             cv2.COLOR_BGR2GRAY
@@ -511,28 +800,42 @@ class ArucoDetector():
             cv2.aruco,
             "ArucoDetector"
         ):
+
             detector = cv2.aruco.ArucoDetector(
                 self.aruco_dict,
                 self.aruco_params
             )
 
-            corners, ids, _ = detector.detectMarkers(
-                gray
+            corners, ids, _ = (
+                detector.detectMarkers(
+                    gray
+                )
             )
 
         else:
-            corners, ids, _ = cv2.aruco.detectMarkers(
-                gray,
-                self.aruco_dict,
-                parameters=self.aruco_params
+
+            corners, ids, _ = (
+                cv2.aruco.detectMarkers(
+                    gray,
+                    self.aruco_dict,
+                    parameters=self.aruco_params
+                )
             )
 
+        # Keep track of whether the landing marker
+        # is visible in this particular frame
+        landing_seen_this_frame = False
+
         if ids is None or len(corners) == 0:
+
+            self.landing_detection_count = 0
             return
 
         ids = ids.flatten()
 
-        half = self.MARKER_LENGTH / 2
+        half = (
+            self.MARKER_LENGTH / 2
+        )
 
         object_points = np.array([
             [-half,  half, 0.0],
@@ -545,14 +848,13 @@ class ArucoDetector():
             corners,
             ids
         ):
+
             pts = marker_corners.reshape(
                 (4, 2)
             ).astype(np.float32)
 
-            # Raw and YOLO images retain the same 16:9 geometry
             pts_int = pts.astype(int)
 
-            # Draw marker border
             cv2.polylines(
                 output_frame,
                 [pts_int],
@@ -562,20 +864,26 @@ class ArucoDetector():
             )
 
             cX = int(
-                np.mean(pts[:, 0])
+                np.mean(
+                    pts[:, 0]
+                )
             )
 
             cY = int(
-                np.mean(pts[:, 1])
+                np.mean(
+                    pts[:, 1]
+                )
             )
 
-            # Full-FOV raw and output images use the same coordinates
             output_cX = cX
             output_cY = cY
 
             cv2.circle(
                 output_frame,
-                (output_cX, output_cY),
+                (
+                    output_cX,
+                    output_cY
+                ),
                 4,
                 (0, 0, 255),
                 -1
@@ -583,8 +891,13 @@ class ArucoDetector():
 
             cv2.putText(
                 output_frame,
-                "ID: {}".format(marker_id),
-                (output_cX + 8, output_cY - 8),
+                "ID: {}".format(
+                    marker_id
+                ),
+                (
+                    output_cX + 8,
+                    output_cY - 8
+                ),
                 cv2.FONT_HERSHEY_SIMPLEX,
                 0.5,
                 (0, 255, 0),
@@ -595,10 +908,12 @@ class ArucoDetector():
                 self.camera_matrix is None
                 or self.dist_coeffs is None
             ):
+
                 rospy.logwarn_throttle(
                     2.0,
                     "Waiting for camera info..."
                 )
+
                 continue
 
             camera_matrix = (
@@ -615,18 +930,21 @@ class ArucoDetector():
             )
 
             if not success:
+
                 rospy.logwarn_throttle(
                     1.0,
                     "solvePnP failed for marker Id {}".format(
                         marker_id
                     )
                 )
+
                 continue
 
             if hasattr(
                 cv2,
                 "drawFrameAxes"
             ):
+
                 cv2.drawFrameAxes(
                     output_frame,
                     camera_matrix,
@@ -636,15 +954,25 @@ class ArucoDetector():
                     self.MARKER_LENGTH * 0.5
                 )
 
-            raw_x = float(tvec[0])
-            raw_y = float(tvec[1])
-            raw_z = float(tvec[2])
-
-            distance = float(
-                np.linalg.norm(tvec)
+            raw_x = float(
+                tvec[0]
             )
 
-            # Display convention
+            raw_y = float(
+                tvec[1]
+            )
+
+            raw_z = float(
+                tvec[2]
+            )
+
+            distance = float(
+                np.linalg.norm(
+                    tvec
+                )
+            )
+
+            # Display camera-relative pose
             x = raw_x
             y = -raw_y
             z = raw_z
@@ -658,6 +986,7 @@ class ArucoDetector():
             )
 
             if marker_world is not None:
+
                 self.publish_world_position(
                     marker_world
                 )
@@ -681,27 +1010,65 @@ class ArucoDetector():
                 distance
             )
 
-            # Only selected ArUco ID triggers landing ROI
-            if int(marker_id) == self.landing_aruco_id:
+            # Landing marker needs several consecutive detections
+            if (
+                int(marker_id)
+                == self.landing_aruco_id
+            ):
 
-                if marker_world is not None:
-                    self.publish_test_roi(
-                        marker_id,
-                        marker_world
-                    )
-                else:
-                    self.publish_test_roi(
-                        marker_id,
-                        [-2.0, 1.0, 2.0]
-                    )
+                landing_seen_this_frame = True
+
+                self.landing_detection_count += 1
+
+                cv2.putText(
+                    output_frame,
+                    "Landing confirm: {}/{}".format(
+                        min(
+                            self.landing_detection_count,
+                            self.LANDING_FRAMES_REQUIRED
+                        ),
+                        self.LANDING_FRAMES_REQUIRED
+                    ),
+                    (
+                        output_cX + 8,
+                        output_cY + 49
+                    ),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    0.40,
+                    (0, 255, 255),
+                    1
+                )
+
+                if (
+                    self.landing_detection_count
+                    >= self.LANDING_FRAMES_REQUIRED
+                ):
+
+                    if marker_world is not None:
+
+                        self.publish_test_roi(
+                            marker_id,
+                            marker_world
+                        )
+
+                    else:
+
+                        self.publish_test_roi(
+                            marker_id,
+                            [-2.0, 1.0, 2.0]
+                        )
 
             if self.SHOW_DISTANCE_TEXT:
+
                 cv2.putText(
                     output_frame,
                     "Dist: {:.2f} m".format(
                         distance
                     ),
-                    (output_cX + 8, output_cY + 15),
+                    (
+                        output_cX + 8,
+                        output_cY + 15
+                    ),
                     cv2.FONT_HERSHEY_SIMPLEX,
                     0.42,
                     (0, 255, 255),
@@ -715,15 +1082,21 @@ class ArucoDetector():
                         y,
                         z
                     ),
-                    (output_cX + 8, output_cY + 32),
+                    (
+                        output_cX + 8,
+                        output_cY + 32
+                    ),
                     cv2.FONT_HERSHEY_SIMPLEX,
                     0.40,
                     (0, 255, 255),
                     1
                 )
 
+        # If the landing marker disappears, restart confirmation
+        if not landing_seen_this_frame:
+            self.landing_detection_count = 0
 
-    # ROI addition for Jonah
+
     def publish_test_roi(
         self,
         marker_id,
@@ -738,11 +1111,20 @@ class ArucoDetector():
 
         roi_msg = PoseStamped()
 
-        roi_msg.header.stamp = rospy.Time.now()
+        roi_msg.header.stamp = (
+            rospy.Time.now()
+        )
+
         roi_msg.header.frame_id = "map"
 
-        roi_msg.pose.position.x = float(marker_world[0])
-        roi_msg.pose.position.y = float(marker_world[1])
+        roi_msg.pose.position.x = float(
+            marker_world[0]
+        )
+
+        roi_msg.pose.position.y = float(
+            marker_world[1]
+        )
+
         roi_msg.pose.position.z = 2.0
 
         roi_msg.pose.orientation.x = 0.0
@@ -750,8 +1132,13 @@ class ArucoDetector():
         roi_msg.pose.orientation.z = 0.0
         roi_msg.pose.orientation.w = 1.0
 
-        self.roi_type_pub.publish("A")
-        self.roi_pub.publish(roi_msg)
+        self.roi_type_pub.publish(
+            "A"
+        )
+
+        self.roi_pub.publish(
+            roi_msg
+        )
 
         self.roi_triggered = True
 
@@ -772,19 +1159,29 @@ class ArucoDetector():
 
         msg_out = CompressedImage()
 
-        msg_out.header.stamp = rospy.Time.now()
-        msg_out.header.frame_id = "oak_rgb_camera"
+        msg_out.header.stamp = (
+            rospy.Time.now()
+        )
+
+        msg_out.header.frame_id = (
+            "oak_rgb_camera"
+        )
+
         msg_out.format = "jpeg"
 
-        success, encoded_image = cv2.imencode(
-            ".jpg",
-            frame
+        success, encoded_image = (
+            cv2.imencode(
+                ".jpg",
+                frame
+            )
         )
 
         if not success:
+
             rospy.logwarn(
                 "Failed to encode processed image"
             )
+
             return
 
         msg_out.data = (
@@ -797,7 +1194,10 @@ class ArucoDetector():
 
 
 if __name__ == "__main__":
-    rospy.init_node("aruco_detector")
+
+    rospy.init_node(
+        "aruco_detector"
+    )
 
     detector = ArucoDetector()
 

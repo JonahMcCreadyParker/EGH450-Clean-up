@@ -16,9 +16,9 @@
 	<node pkg="uavasr_emulator" type="uavasr_emulator_node" name="uavasr" clear_params="true" output="screen">
 		
 		<!-- Linear and yaw motion velocities -->
-		<param name="vel_linear" type="double" value="0.2" /> 	<!-- m/s -->
+		<param name="vel_linear" type="double" value="0.4" /> 	<!-- m/s -->
 		<param name="vel_yaw" type="double" value="0.2" /> 		<!-- m/s -->
-		<param name="flight_height" type="double" value="1.0" /><!-- m -->
+		<param name="flight_height" type="double" value="1.8" /><!-- m -->
 
 		<!-- Position and yaw waypoint accuracies -->
 		<param name="acc_pos" type="double" value="0.1" />
