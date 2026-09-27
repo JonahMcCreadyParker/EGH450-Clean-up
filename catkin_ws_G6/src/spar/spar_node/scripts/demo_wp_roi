@@ -16,6 +16,9 @@ from sensor_msgs.msg import BatteryState
 
 from std_msgs.msg import String, Bool
 
+from breadcrumb.srv import RequestPath
+from breadcrumb.srv import RequestPathRequest
+
 # This is getting a bit more complicated now, so we'll put our information in
 # a class to keep track of all of our variables. This is not so much different
 # to the previous methods, other than the fact that the class will operate
@@ -481,6 +484,67 @@ class Guidance():
 				rospy.loginfo("Mission cancelled!")
 				rospy.signal_shutdown("cancelled")
 
+def plan_path_with_breadcrumb(waypoints):
+
+    rospy.loginfo("Waiting for Breadcrumb...")
+
+    # Wait until Breadcrumb is running
+    rospy.wait_for_service('/breadcrumb/request_path')
+
+    # Connect to Breadcrumb
+    srvc_bc = rospy.ServiceProxy('/breadcrumb/request_path', RequestPath)
+
+    planned_waypoints = []
+
+    # Go through every pair of lawnmower waypoints
+    for i in range(len(waypoints) - 1):
+
+        req = RequestPathRequest()
+
+        # Start waypoint
+        req.start.x = waypoints[i][0]
+        req.start.y = waypoints[i][1]
+        req.start.z = waypoints[i][2]
+
+        # Destination waypoint
+        req.end.x = waypoints[i + 1][0]
+        req.end.y = waypoints[i + 1][1]
+        req.end.z = waypoints[i + 1][2]
+
+        rospy.loginfo(
+            "Planning segment %i: (%.2f, %.2f) -> (%.2f, %.2f)",
+            i + 1,
+            req.start.x,
+            req.start.y,
+            req.end.x,
+            req.end.y
+        )
+
+        # Ask Breadcrumb to run A*
+        res = srvc_bc(req)
+
+        if len(res.path.poses) == 0:
+            rospy.logerr(
+                "Breadcrumb could not find path for segment %i",
+                i + 1
+            )
+            return None
+
+        # Convert Breadcrumb poses into the format Guidance expects
+        for pose in res.path.poses:
+
+            wp = [pose.position.x, pose.position.y, waypoints[i + 1][2], waypoints[i + 1][3]]
+
+            planned_waypoints.append(wp)
+
+    rospy.loginfo(
+        "Breadcrumb planning complete: %i waypoints",
+        len(planned_waypoints)
+    )
+
+    return planned_waypoints
+
+
 def trigger_takeoff():
     rospy.loginfo("[SPAR] Starting takeoff sequence...")
     
@@ -510,10 +574,6 @@ def trigger_landing():
 def log_aruco(aruco_list):
 	aruco_list.append()
 	
-
-
-
-
 
 
 def main(args):
@@ -570,12 +630,27 @@ def main(args):
 		[ 0.0,  0.0,  h,  0.0]    # to origin
 		]
 
-
+	# Without breadcrumb (what we had before)
 	# Take off first
+	# trigger_takeoff()
+
+	# # Create our guidance class option
+	# Guidance(wps)
+	
+
+	# Implementation of breadcrumb
+	# Plan safe path before takeoff
+	planned_wps = plan_path_with_breadcrumb(wps)
+
+	# Don't take off if Breadcrumb couldn't find a valid path
+	if planned_wps is None:
+		rospy.logerr("Path planning failed. Mission cancelled.")
+		return
+
 	trigger_takeoff()
 
-	# Create our guidance class option
-	Guidance(wps)
+	# Follow Breadcrumb's planned path instead of original raw waypoints
+	Guidance(planned_wps)
 
 	# aruco_list = obj.aruco_list()
 
