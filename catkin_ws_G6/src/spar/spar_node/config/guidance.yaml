@@ -1,0 +1,103 @@
+# ============================================================
+# EGH450 AUTOPILOT / GUIDANCE CONFIGURATION
+# ============================================================
+
+
+# ------------------------------------------------------------
+# Flight Parameters
+# ------------------------------------------------------------
+
+flight:
+  height: 2.4
+
+  horizontal_speed: 0.4
+  vertical_speed: 0.4
+
+  takeoff_speed: 0.2
+  landing_speed: 0.2
+
+  yaw_speed: 0.2
+
+  position_tolerance: 0.1
+  yaw_tolerance: 0.1
+
+
+# ------------------------------------------------------------
+# ROI / Target Diversion Parameters
+# ------------------------------------------------------------
+
+roi:
+  payload_height: 1.1
+
+  approach_pause: 1.0
+  target_pause: 5.0
+  return_pause: 1.0
+
+  payload_timeout: 10.0
+
+  payload_settle_pause: 1.0
+  post_payload_pause: 2.0
+
+# ------------------------------------------------------------
+# Battery Parameters
+# ------------------------------------------------------------
+
+battery:
+  warning_percent: 20.0
+  landing_percent: 10.0
+
+
+# ------------------------------------------------------------
+# ROS Interfaces
+# ------------------------------------------------------------
+
+topics:
+  pose: "/mavros/local_position/pose"
+  battery: "/mavros/battery"
+
+  roi: "/guidance/roi"
+  roi_type: "/guidance/roi_type"
+  roi_enable: "/guidance/roi_enable"
+
+  payload_command: "/payload/nav_clearance"
+  payload_confirmation: "/payload/deploy_confirmation"
+
+  aruco_log: "/aruco/pose_log"
+
+
+# ------------------------------------------------------------
+# SPAR Interface
+# ------------------------------------------------------------
+
+spar:
+  action: "/spar/flight"
+
+
+# ------------------------------------------------------------
+# Mission Parameters
+# ------------------------------------------------------------
+
+mission:
+  enable_roi_after_waypoint: 2
+
+  waypoints:
+    - [ 0.0,  0.0,  0.0]
+    - [-3.2, -2.5,  0.0]
+    - [ 3.2, -2.5,  0.0]
+    - [ 3.2, -2.0,  0.0]
+    - [-3.2, -2.0,  0.0]
+    - [-3.2, -1.5,  0.0]
+    - [ 3.2, -1.5,  0.0]
+    - [ 3.2, -1.0,  0.0]
+    - [-3.2, -1.0,  0.0]
+    - [-3.2, -0.5,  0.0]
+    - [ 3.2, -0.5,  0.0]
+    - [ 3.2,  0.0,  0.0]
+    - [-3.2,  0.0,  0.0]
+    - [-3.2,  0.5,  0.0]
+    - [ 3.2,  0.5,  0.0]
+    - [ 3.2,  1.0,  0.0]
+    - [-3.2,  1.0,  0.0]
+    - [-3.2,  1.5,  0.0]
+    - [ 3.2,  1.5,  0.0]
+    - [ 0.0,  0.0,  0.0]

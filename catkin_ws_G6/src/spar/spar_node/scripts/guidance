@@ -1,0 +1,2179 @@
+#!/usr/bin/env python3
+
+import copy
+import math
+import threading
+from collections import deque
+from enum import Enum, auto
+
+import actionlib
+import rospy
+
+from actionlib_msgs.msg import GoalStatus
+from geometry_msgs.msg import PoseStamped
+from sensor_msgs.msg import BatteryState
+from std_msgs.msg import Bool, String
+
+from spar_msgs.msg import FlightMotionAction, FlightMotionGoal
+
+
+# ============================================================
+# Mission / motion states
+# ============================================================
+
+class MissionState(Enum):
+    WAITING_FOR_FLIGHT = auto()
+    TAKEOFF = auto()
+    SEARCH = auto()
+    DIVERT_TO_TARGET = auto()
+    DEPLOY_PAYLOAD = auto()
+    RETURN_TO_SEARCH = auto()
+    FINAL_APPROACH = auto()
+    LANDING = auto()
+    COMPLETE = auto()
+    ABORTED = auto()
+
+
+class MotionResult(Enum):
+    SUCCEEDED = auto()
+    FAILED = auto()
+    ROI_INTERRUPT = auto()
+    LOW_BATTERY = auto()
+    SHUTDOWN = auto()
+
+
+# ============================================================
+# Guidance
+# ============================================================
+
+class Guidance:
+    """
+    Top-level autonomous mission controller.
+
+    Mission flow:
+        Wait for SPAR
+        -> Takeoff
+        -> Lawn-mower search
+        -> ROI diversion / payload deployment if required
+        -> Resume search
+        -> Final ArUco approach if available
+        -> Land
+    """
+
+    TARGET_TO_PAYLOAD = {
+        "B": "T",  # Backpack -> Tracker
+        "P": "E",  # Person   -> EpiPen
+    }
+
+    def __init__(self):
+
+        # --------------------------------------------------------
+        # Configuration
+        # --------------------------------------------------------
+
+        self._load_config()
+        self._validate_config()
+
+        # --------------------------------------------------------
+        # Mission state
+        # --------------------------------------------------------
+
+        self.state = MissionState.WAITING_FOR_FLIGHT
+
+        self.current_waypoint_index = 0
+        self.current_pose = None
+
+        self.battery_percent = None
+        self.low_battery_event = False
+        self.battery_warning_sent = False
+
+        self.roi_enabled = False
+
+        # --------------------------------------------------------
+        # Payload state
+        # --------------------------------------------------------
+
+        self.payload_deployed = {
+            "T": False,
+            "E": False,
+        }
+
+        self.pending_payload = None
+        self.payload_confirmed = False
+
+        # --------------------------------------------------------
+        # Landing / target state
+        # --------------------------------------------------------
+
+        self.aruco_landing_roi = None
+
+        # --------------------------------------------------------
+        # Runtime logs
+        # --------------------------------------------------------
+
+        self.waypoint_log = []
+        self.aruco_log = []
+
+        # --------------------------------------------------------
+        # ROI message pairing
+        #
+        # ROI type and ROI position currently arrive on separate
+        # ROS topics. They are paired here before the mission
+        # controller is allowed to act on them.
+        # --------------------------------------------------------
+
+        self.roi_lock = threading.Lock()
+
+        self.roi_type_queue = deque()
+        self.roi_pose_queue = deque()
+        self.roi_request_queue = deque()
+
+        # --------------------------------------------------------
+        # ROS publishers
+        # --------------------------------------------------------
+
+        self.pub_roi_enable = rospy.Publisher(
+            self.topic_roi_enable,
+            Bool,
+            queue_size=1,
+            latch=True,
+        )
+
+        self.pub_payload_command = rospy.Publisher(
+            self.topic_payload_command,
+            String,
+            queue_size=10,
+        )
+
+        # --------------------------------------------------------
+        # ROS subscribers
+        # --------------------------------------------------------
+
+        self.sub_pose = rospy.Subscriber(
+            self.topic_pose,
+            PoseStamped,
+            self.callback_pose,
+            queue_size=1,
+        )
+
+        self.sub_battery = rospy.Subscriber(
+            self.topic_battery,
+            BatteryState,
+            self.callback_battery,
+            queue_size=1,
+        )
+
+        self.sub_roi = rospy.Subscriber(
+            self.topic_roi,
+            PoseStamped,
+            self.callback_roi,
+            queue_size=10,
+        )
+
+        self.sub_roi_type = rospy.Subscriber(
+            self.topic_roi_type,
+            String,
+            self.callback_roi_type,
+            queue_size=10,
+        )
+
+        self.sub_payload_confirmation = rospy.Subscriber(
+            self.topic_payload_confirmation,
+            Bool,
+            self.callback_payload_confirmation,
+            queue_size=10,
+        )
+
+        self.sub_aruco_log = rospy.Subscriber(
+            self.topic_aruco_log,
+            String,
+            self.callback_aruco_log,
+            queue_size=10,
+        )
+
+        # Vision ROI commands begin disabled.
+        self.pub_roi_enable.publish(False)
+
+        # --------------------------------------------------------
+        # SPAR action client
+        # --------------------------------------------------------
+
+        self.spar_client = actionlib.SimpleActionClient(
+            self.spar_action,
+            FlightMotionAction,
+        )
+
+        rospy.on_shutdown(self.shutdown)
+
+        self._log_configuration_summary()
+
+    # ============================================================
+    # Configuration
+    # ============================================================
+
+    def _load_config(self):
+
+        p = rospy.get_param
+
+        # Flight
+        self.flight_height = float(
+            p("~flight/height")
+        )
+
+        self.horizontal_speed = float(
+            p("~flight/horizontal_speed")
+        )
+
+        self.vertical_speed = float(
+            p("~flight/vertical_speed")
+        )
+
+        self.takeoff_speed = float(
+            p("~flight/takeoff_speed")
+        )
+
+        self.landing_speed = float(
+            p("~flight/landing_speed")
+        )
+
+        self.yaw_speed = float(
+            p("~flight/yaw_speed")
+        )
+
+        self.position_tolerance = float(
+            p("~flight/position_tolerance")
+        )
+
+        self.yaw_tolerance = float(
+            p("~flight/yaw_tolerance")
+        )
+
+        # ROI / payload
+        self.payload_height = float(
+            p("~roi/payload_height")
+        )
+
+        self.approach_pause = float(
+            p("~roi/approach_pause")
+        )
+
+        self.payload_settle_pause = float(
+            p("~roi/payload_settle_pause")
+        )
+
+        self.target_pause = float(
+            p("~roi/target_pause")
+        )
+
+        self.post_payload_pause = float(
+            p("~roi/post_payload_pause")
+        )
+
+        self.return_pause = float(
+            p("~roi/return_pause")
+        )
+
+        self.payload_timeout = float(
+            p("~roi/payload_timeout")
+        )
+
+        # Battery
+        self.battery_warning_percent = float(
+            p("~battery/warning_percent")
+        )
+
+        self.battery_landing_percent = float(
+            p("~battery/landing_percent")
+        )
+
+        # ROS topics
+        self.topic_pose = p(
+            "~topics/pose"
+        )
+
+        self.topic_battery = p(
+            "~topics/battery"
+        )
+
+        self.topic_roi = p(
+            "~topics/roi"
+        )
+
+        self.topic_roi_type = p(
+            "~topics/roi_type"
+        )
+
+        self.topic_roi_enable = p(
+            "~topics/roi_enable"
+        )
+
+        self.topic_payload_command = p(
+            "~topics/payload_command"
+        )
+
+        self.topic_payload_confirmation = p(
+            "~topics/payload_confirmation"
+        )
+
+        self.topic_aruco_log = p(
+            "~topics/aruco_log"
+        )
+
+        # SPAR
+        self.spar_action = p(
+            "~spar/action"
+        )
+
+        # Mission
+        self.enable_roi_after_waypoint = int(
+            p("~mission/enable_roi_after_waypoint")
+        )
+
+        self.waypoints = p(
+            "~mission/waypoints"
+        )
+
+    def _validate_config(self):
+
+        positive_values = {
+            "flight.height": self.flight_height,
+            "flight.horizontal_speed": self.horizontal_speed,
+            "flight.vertical_speed": self.vertical_speed,
+            "flight.takeoff_speed": self.takeoff_speed,
+            "flight.landing_speed": self.landing_speed,
+            "flight.yaw_speed": self.yaw_speed,
+            "flight.position_tolerance": self.position_tolerance,
+            "flight.yaw_tolerance": self.yaw_tolerance,
+            "roi.payload_height": self.payload_height,
+            "roi.payload_timeout": self.payload_timeout,
+        }
+
+        for name, value in positive_values.items():
+
+            if value <= 0.0:
+
+                raise ValueError(
+                    "{} must be greater than zero.".format(
+                        name
+                    )
+                )
+
+        non_negative_values = {
+            "roi.approach_pause": self.approach_pause,
+            "roi.payload_settle_pause": self.payload_settle_pause,
+            "roi.target_pause": self.target_pause,
+            "roi.post_payload_pause": self.post_payload_pause,
+            "roi.return_pause": self.return_pause,
+        }
+
+        for name, value in non_negative_values.items():
+
+            if value < 0.0:
+
+                raise ValueError(
+                    "{} cannot be negative.".format(
+                        name
+                    )
+                )
+
+        if self.payload_height > self.flight_height:
+
+            rospy.logwarn(
+                "[GUIDANCE] Payload height %.2f m is above "
+                "flight height %.2f m.",
+                self.payload_height,
+                self.flight_height,
+            )
+
+        if not (
+            0.0
+            <= self.battery_landing_percent
+            <= self.battery_warning_percent
+            <= 100.0
+        ):
+
+            raise ValueError(
+                "Battery thresholds must satisfy "
+                "0 <= landing <= warning <= 100."
+            )
+
+        if (
+            not isinstance(self.waypoints, list)
+            or not self.waypoints
+        ):
+
+            raise ValueError(
+                "mission.waypoints must contain "
+                "at least one waypoint."
+            )
+
+        for index, waypoint in enumerate(
+            self.waypoints
+        ):
+
+            if (
+                not isinstance(waypoint, list)
+                or len(waypoint) != 3
+            ):
+
+                raise ValueError(
+                    "Waypoint {} must be "
+                    "[X, Y, Yaw].".format(
+                        index + 1
+                    )
+                )
+
+            if not all(
+                isinstance(value, (int, float))
+                for value in waypoint
+            ):
+
+                raise ValueError(
+                    "Waypoint {} contains a "
+                    "non-numeric value.".format(
+                        index + 1
+                    )
+                )
+
+        if self.enable_roi_after_waypoint < 0:
+
+            raise ValueError(
+                "mission.enable_roi_after_waypoint "
+                "cannot be negative."
+            )
+
+        if (
+            self.enable_roi_after_waypoint
+            > len(self.waypoints)
+        ):
+
+            raise ValueError(
+                "mission.enable_roi_after_waypoint "
+                "is greater than the number of "
+                "configured waypoints."
+            )
+
+    def _log_configuration_summary(self):
+
+        rospy.loginfo(
+            "[GUIDANCE] Loaded %d search waypoints.",
+            len(self.waypoints),
+        )
+
+        rospy.loginfo(
+            "[GUIDANCE] Flight: "
+            "height=%.2f m, "
+            "horizontal=%.2f m/s, "
+            "vertical=%.2f m/s, "
+            "takeoff=%.2f m/s, "
+            "landing=%.2f m/s.",
+            self.flight_height,
+            self.horizontal_speed,
+            self.vertical_speed,
+            self.takeoff_speed,
+            self.landing_speed,
+        )
+
+        rospy.loginfo(
+            "[GUIDANCE] SPAR action: %s",
+            self.spar_action,
+        )
+
+    # ============================================================
+    # ROS callbacks
+    #
+    # Callbacks ONLY update data/events.
+    # They do not command aircraft movement.
+    # ============================================================
+
+    def callback_pose(self, msg):
+
+        self.current_pose = msg
+
+    def callback_battery(self, msg):
+
+        # BatteryState.percentage should be 0.0 -> 1.0.
+        # Negative values indicate an unknown percentage.
+
+        if (
+            not math.isfinite(msg.percentage)
+            or msg.percentage < 0.0
+            or msg.percentage > 1.0
+        ):
+
+            rospy.logwarn_throttle(
+                5.0,
+                "[GUIDANCE] Invalid/unknown "
+                "battery percentage received: %.3f",
+                msg.percentage,
+            )
+
+            return
+
+        self.battery_percent = (
+            msg.percentage * 100.0
+        )
+
+        if (
+            self.battery_percent
+            <= self.battery_landing_percent
+        ):
+
+            if not self.low_battery_event:
+
+                rospy.logerr(
+                    "[GUIDANCE] Battery %.1f%% "
+                    "<= landing threshold %.1f%%.",
+                    self.battery_percent,
+                    self.battery_landing_percent,
+                )
+
+            self.low_battery_event = True
+
+        elif (
+            self.battery_percent
+            <= self.battery_warning_percent
+            and not self.battery_warning_sent
+        ):
+
+            rospy.logwarn(
+                "[GUIDANCE] Battery warning: %.1f%%.",
+                self.battery_percent,
+            )
+
+            self.battery_warning_sent = True
+
+    def callback_roi_type(self, msg):
+
+        target_type = (
+            msg.data.strip().upper()
+        )
+
+        with self.roi_lock:
+
+            self.roi_type_queue.append(
+                target_type
+            )
+
+            self._pair_roi_messages_locked()
+
+    def callback_roi(self, msg):
+
+        with self.roi_lock:
+
+            self.roi_pose_queue.append(
+                copy.deepcopy(msg)
+            )
+
+            self._pair_roi_messages_locked()
+
+    def _pair_roi_messages_locked(self):
+
+        while (
+            self.roi_type_queue
+            and self.roi_pose_queue
+        ):
+
+            target_type = (
+                self.roi_type_queue.popleft()
+            )
+
+            pose_msg = (
+                self.roi_pose_queue.popleft()
+            )
+
+            self.roi_request_queue.append(
+                (
+                    target_type,
+                    pose_msg,
+                )
+            )
+
+            rospy.loginfo(
+                "[GUIDANCE] ROI queued: "
+                "type=%s, x=%.2f, y=%.2f.",
+                target_type,
+                pose_msg.pose.position.x,
+                pose_msg.pose.position.y,
+            )
+
+    def callback_payload_confirmation(
+        self,
+        msg,
+    ):
+
+        if (
+            msg.data
+            and self.pending_payload
+            is not None
+        ):
+
+            self.payload_confirmed = True
+
+    def callback_aruco_log(
+        self,
+        msg,
+    ):
+
+        self.aruco_log.append(
+            msg.data
+        )
+
+    # ============================================================
+    # Mission state / event helpers
+    # ============================================================
+
+    def set_state(
+        self,
+        new_state,
+    ):
+
+        if new_state == self.state:
+
+            return
+
+        rospy.loginfo(
+            "[GUIDANCE] State: %s -> %s",
+            self.state.name,
+            new_state.name,
+        )
+
+        self.state = new_state
+
+    def enable_roi_commands(self):
+
+        if self.roi_enabled:
+
+            return
+
+        self.roi_enabled = True
+
+        self.pub_roi_enable.publish(
+            True
+        )
+
+        rospy.loginfo(
+            "[GUIDANCE] Vision ROI "
+            "commands enabled."
+        )
+
+    def disable_roi_commands(self):
+
+        self.roi_enabled = False
+
+        self.pub_roi_enable.publish(
+            False
+        )
+
+    def _process_roi_requests(
+        self,
+        allow_target_interrupt,
+    ):
+
+        """
+        Process completed ROI requests.
+
+        A:
+            Store as landing location.
+            Does not interrupt the mission.
+
+        B / P:
+            Used only while SEARCH is accepting
+            target diversions.
+        """
+
+        stored_aruco = []
+        ignored_targets = []
+
+        with self.roi_lock:
+
+            remaining = deque()
+
+            while self.roi_request_queue:
+
+                (
+                    target_type,
+                    pose_msg,
+                ) = self.roi_request_queue.popleft()
+
+                if target_type == "A":
+
+                    self.aruco_landing_roi = [
+                        pose_msg.pose.position.x,
+                        pose_msg.pose.position.y,
+                        self.flight_height,
+                        0.0,
+                    ]
+
+                    stored_aruco.append(
+                        copy.deepcopy(
+                            self.aruco_landing_roi
+                        )
+                    )
+
+                elif (
+                    target_type
+                    in self.TARGET_TO_PAYLOAD
+                ):
+
+                    if allow_target_interrupt:
+
+                        remaining.append(
+                            (
+                                target_type,
+                                pose_msg,
+                            )
+                        )
+
+                    else:
+
+                        ignored_targets.append(
+                            target_type
+                        )
+
+                else:
+
+                    rospy.logwarn(
+                        "[GUIDANCE] Unsupported ROI "
+                        "type '%s' ignored.",
+                        target_type,
+                    )
+
+            self.roi_request_queue = (
+                remaining
+            )
+
+        for landing_roi in stored_aruco:
+
+            rospy.loginfo(
+                "[GUIDANCE] Stored ArUco "
+                "landing ROI at "
+                "(%.2f, %.2f, %.2f).",
+                landing_roi[0],
+                landing_roi[1],
+                landing_roi[2],
+            )
+
+        for target_type in ignored_targets:
+
+            rospy.logwarn(
+                "[GUIDANCE] Ignoring target "
+                "ROI '%s' while state=%s.",
+                target_type,
+                self.state.name,
+            )
+
+    def _has_target_roi(self):
+
+        with self.roi_lock:
+
+            return any(
+                target_type
+                in self.TARGET_TO_PAYLOAD
+                for target_type, _
+                in self.roi_request_queue
+            )
+
+    def _pop_target_roi(self):
+
+        with self.roi_lock:
+
+            selected = None
+            remaining = deque()
+
+            while self.roi_request_queue:
+
+                request = (
+                    self.roi_request_queue.popleft()
+                )
+
+                target_type, _ = request
+
+                if (
+                    selected is None
+                    and target_type
+                    in self.TARGET_TO_PAYLOAD
+                ):
+
+                    selected = request
+
+                else:
+
+                    remaining.append(
+                        request
+                    )
+
+            self.roi_request_queue = (
+                remaining
+            )
+
+            return selected
+
+    def _get_current_position(self):
+
+        if self.current_pose is None:
+
+            return None
+
+        position = (
+            self.current_pose.pose.position
+        )
+
+        return [
+            float(position.x),
+            float(position.y),
+            float(position.z),
+            0.0,
+        ]
+
+    # ============================================================
+    # SPAR motion layer
+    # ============================================================
+
+    @staticmethod
+    def _goal_status_name(state):
+
+        status_names = {
+            GoalStatus.PENDING: "PENDING",
+            GoalStatus.ACTIVE: "ACTIVE",
+            GoalStatus.PREEMPTED: "PREEMPTED",
+            GoalStatus.SUCCEEDED: "SUCCEEDED",
+            GoalStatus.ABORTED: "ABORTED",
+            GoalStatus.REJECTED: "REJECTED",
+            GoalStatus.PREEMPTING: "PREEMPTING",
+            GoalStatus.RECALLING: "RECALLING",
+            GoalStatus.RECALLED: "RECALLED",
+            GoalStatus.LOST: "LOST",
+        }
+
+        return status_names.get(
+            state,
+            "UNKNOWN({})".format(
+                state
+            ),
+        )
+
+    def execute_motion(
+        self,
+        goal,
+        description,
+        allow_roi_interrupt=False,
+        allow_low_battery_interrupt=True,
+    ):
+
+        """
+        Send one SPAR motion command and
+        explicitly monitor its result.
+
+        This is the central location through
+        which mission movement is commanded.
+        """
+
+        rospy.loginfo(
+            "[GUIDANCE] Motion start: %s",
+            description,
+        )
+
+        self.spar_client.send_goal(
+            goal
+        )
+
+        while not rospy.is_shutdown():
+
+            self._process_roi_requests(
+                allow_target_interrupt=(
+                    allow_roi_interrupt
+                )
+            )
+
+            # --------------------------------------------
+            # Low battery interrupt
+            # --------------------------------------------
+
+            if (
+                allow_low_battery_interrupt
+                and self.low_battery_event
+            ):
+
+                rospy.logwarn(
+                    "[GUIDANCE] Cancelling motion "
+                    "due to low battery."
+                )
+
+                self.spar_client.cancel_goal()
+
+                self.spar_client.wait_for_result(
+                    rospy.Duration(1.0)
+                )
+
+                return (
+                    MotionResult.LOW_BATTERY
+                )
+
+            # --------------------------------------------
+            # Target ROI interrupt
+            # --------------------------------------------
+
+            if (
+                allow_roi_interrupt
+                and self._has_target_roi()
+            ):
+
+                rospy.loginfo(
+                    "[GUIDANCE] Cancelling search "
+                    "motion for ROI diversion."
+                )
+
+                self.spar_client.cancel_goal()
+
+                self.spar_client.wait_for_result(
+                    rospy.Duration(1.0)
+                )
+
+                return (
+                    MotionResult.ROI_INTERRUPT
+                )
+
+            # --------------------------------------------
+            # Normal action completion
+            # --------------------------------------------
+
+            if self.spar_client.wait_for_result(
+                rospy.Duration(0.1)
+            ):
+
+                break
+
+        if rospy.is_shutdown():
+
+            self.spar_client.cancel_goal()
+
+            return MotionResult.SHUTDOWN
+
+        state = (
+            self.spar_client.get_state()
+        )
+
+        if state == GoalStatus.SUCCEEDED:
+
+            rospy.loginfo(
+                "[GUIDANCE] Motion complete: %s",
+                description,
+            )
+
+            return MotionResult.SUCCEEDED
+
+        rospy.logerr(
+            "[GUIDANCE] Motion failed: %s | "
+            "SPAR status=%s",
+            description,
+            self._goal_status_name(
+                state
+            ),
+        )
+
+        return MotionResult.FAILED
+
+    # ------------------------------------------------------------
+    # Takeoff
+    # ------------------------------------------------------------
+
+    def takeoff(self):
+
+        goal = FlightMotionGoal()
+
+        goal.motion = (
+            FlightMotionGoal.MOTION_TAKEOFF
+        )
+
+        goal.position.z = (
+            self.flight_height
+        )
+
+        goal.velocity_vertical = (
+            self.takeoff_speed
+        )
+
+        goal.wait_for_convergence = True
+
+        goal.position_radius = (
+            self.position_tolerance
+        )
+
+        goal.yaw_range = (
+            self.yaw_tolerance
+        )
+
+        return self.execute_motion(
+            goal,
+            "Takeoff to {:.2f} m".format(
+                self.flight_height
+            ),
+            allow_roi_interrupt=False,
+            allow_low_battery_interrupt=True,
+        )
+
+    # ------------------------------------------------------------
+    # Go-to waypoint
+    # ------------------------------------------------------------
+
+    def fly_to(
+        self,
+        waypoint,
+        description,
+        allow_roi_interrupt=False,
+    ):
+
+        """
+        waypoint:
+            [X, Y, Z, Yaw]
+        """
+
+        goal = FlightMotionGoal()
+
+        goal.motion = (
+            FlightMotionGoal.MOTION_GOTO
+        )
+
+        goal.position.x = waypoint[0]
+        goal.position.y = waypoint[1]
+        goal.position.z = waypoint[2]
+
+        goal.yaw = waypoint[3]
+
+        goal.velocity_horizontal = (
+            self.horizontal_speed
+        )
+
+        goal.velocity_vertical = (
+            self.vertical_speed
+        )
+
+        goal.yawrate = (
+            self.yaw_speed
+        )
+
+        goal.wait_for_convergence = True
+
+        goal.position_radius = (
+            self.position_tolerance
+        )
+
+        goal.yaw_range = (
+            self.yaw_tolerance
+        )
+
+        return self.execute_motion(
+            goal,
+            description,
+            allow_roi_interrupt=(
+                allow_roi_interrupt
+            ),
+            allow_low_battery_interrupt=True,
+        )
+
+    # ------------------------------------------------------------
+    # Landing
+    # ------------------------------------------------------------
+
+    def land(self):
+
+        goal = FlightMotionGoal()
+
+        goal.motion = (
+            FlightMotionGoal.MOTION_LAND
+        )
+
+        goal.velocity_vertical = (
+            self.landing_speed
+        )
+
+        # SPAR landing is complete once
+        # the aircraft is disarmed.
+        goal.wait_for_convergence = False
+
+        return self.execute_motion(
+            goal,
+            "Landing",
+            allow_roi_interrupt=False,
+            allow_low_battery_interrupt=False,
+        )
+
+    def cancel_motion(self):
+
+        self.spar_client.cancel_goal()
+
+    # ============================================================
+    # Timing / payload helpers
+    # ============================================================
+
+    def interruptible_wait(
+        self,
+        duration,
+        description,
+    ):
+
+        """
+        Pause while still responding to:
+            - low battery
+            - ArUco landing requests
+            - ROS shutdown
+        """
+
+        if duration <= 0.0:
+
+            return MotionResult.SUCCEEDED
+
+        rospy.loginfo(
+            "[GUIDANCE] Waiting %.1f s: %s",
+            duration,
+            description,
+        )
+
+        end_time = (
+            rospy.Time.now()
+            + rospy.Duration(duration)
+        )
+
+        while (
+            not rospy.is_shutdown()
+            and rospy.Time.now() < end_time
+        ):
+
+            self._process_roi_requests(
+                allow_target_interrupt=False
+            )
+
+            if self.low_battery_event:
+
+                return (
+                    MotionResult.LOW_BATTERY
+                )
+
+            rospy.sleep(
+                0.05
+            )
+
+        if rospy.is_shutdown():
+
+            return MotionResult.SHUTDOWN
+
+        return MotionResult.SUCCEEDED
+
+    def request_payload(
+        self,
+        payload_code,
+    ):
+
+        if (
+            payload_code
+            not in self.payload_deployed
+        ):
+
+            rospy.logerr(
+                "[GUIDANCE] Invalid payload "
+                "code '%s'.",
+                payload_code,
+            )
+
+            return MotionResult.FAILED
+
+        if self.payload_deployed[
+            payload_code
+        ]:
+
+            rospy.logwarn(
+                "[GUIDANCE] Payload %s has "
+                "already been deployed.",
+                payload_code,
+            )
+
+            return MotionResult.SUCCEEDED
+
+        self.pending_payload = (
+            payload_code
+        )
+
+        self.payload_confirmed = False
+
+        rospy.loginfo(
+            "[GUIDANCE] Requesting payload "
+            "deployment: %s",
+            payload_code,
+        )
+
+        self.pub_payload_command.publish(
+            payload_code
+        )
+
+        start_time = (
+            rospy.Time.now()
+        )
+
+        while not rospy.is_shutdown():
+
+            self._process_roi_requests(
+                allow_target_interrupt=False
+            )
+
+            if self.low_battery_event:
+
+                self.pending_payload = None
+
+                return (
+                    MotionResult.LOW_BATTERY
+                )
+
+            if self.payload_confirmed:
+
+                self.payload_deployed[
+                    payload_code
+                ] = True
+
+                self.pending_payload = None
+                self.payload_confirmed = False
+
+                rospy.loginfo(
+                    "[GUIDANCE] Payload %s "
+                    "deployment confirmed.",
+                    payload_code,
+                )
+
+                return (
+                    MotionResult.SUCCEEDED
+                )
+
+            elapsed = (
+                rospy.Time.now()
+                - start_time
+            ).to_sec()
+
+            if (
+                elapsed
+                >= self.payload_timeout
+            ):
+
+                rospy.logwarn(
+                    "[GUIDANCE] Payload %s "
+                    "confirmation timed out "
+                    "after %.1f s. "
+                    "Continuing mission.",
+                    payload_code,
+                    self.payload_timeout,
+                )
+
+                self.pending_payload = None
+                self.payload_confirmed = False
+
+                return MotionResult.FAILED
+
+            rospy.sleep(
+                0.05
+            )
+
+        self.pending_payload = None
+
+        return MotionResult.SHUTDOWN
+
+    # ============================================================
+    # Waypoint handling / logging
+    # ============================================================
+
+    def build_search_waypoint(
+        self,
+        waypoint,
+    ):
+
+        """
+        Converts configured:
+
+            [X, Y, Yaw]
+
+        into:
+
+            [X, Y, Z, Yaw]
+
+        using the single flight-height parameter.
+        """
+
+        return [
+            float(waypoint[0]),
+            float(waypoint[1]),
+            self.flight_height,
+            float(waypoint[2]),
+        ]
+
+    def log_completed_waypoint(
+        self,
+        waypoint_index,
+        commanded_waypoint,
+    ):
+
+        reached = None
+
+        if self.current_pose is not None:
+
+            position = (
+                self.current_pose.pose.position
+            )
+
+            reached = {
+                "x": float(position.x),
+                "y": float(position.y),
+                "z": float(position.z),
+            }
+
+        log_entry = {
+            "index": waypoint_index + 1,
+
+            "commanded": {
+                "x": commanded_waypoint[0],
+                "y": commanded_waypoint[1],
+                "z": commanded_waypoint[2],
+                "yaw": commanded_waypoint[3],
+            },
+
+            "reached": reached,
+
+            "timestamp": (
+                rospy.Time.now().to_sec()
+            ),
+        }
+
+        self.waypoint_log.append(
+            log_entry
+        )
+
+        if reached is not None:
+
+            rospy.loginfo(
+                "[GUIDANCE] Logged WP%d: "
+                "commanded=(%.2f, %.2f, %.2f), "
+                "reached=(%.2f, %.2f, %.2f).",
+                waypoint_index + 1,
+                commanded_waypoint[0],
+                commanded_waypoint[1],
+                commanded_waypoint[2],
+                reached["x"],
+                reached["y"],
+                reached["z"],
+            )
+
+    # ============================================================
+    # ROI / payload diversion
+    # ============================================================
+
+    def handle_target_diversion(
+        self,
+        target_type,
+        roi_pose,
+        return_waypoint,
+        interrupted_waypoint_index,
+    ):
+
+        if (
+            target_type
+            not in self.TARGET_TO_PAYLOAD
+        ):
+
+            rospy.logwarn(
+                "[GUIDANCE] Unsupported diversion "
+                "type '%s'.",
+                target_type,
+            )
+
+            return MotionResult.FAILED
+
+        target_x = (
+            roi_pose.pose.position.x
+        )
+
+        target_y = (
+            roi_pose.pose.position.y
+        )
+
+        approach_waypoint = [
+            target_x,
+            target_y,
+            self.flight_height,
+            0.0,
+        ]
+
+        payload_waypoint = [
+            target_x,
+            target_y,
+            self.payload_height,
+            0.0,
+        ]
+
+        payload_code = (
+            self.TARGET_TO_PAYLOAD[
+                target_type
+            ]
+        )
+
+        self.set_state(
+            MissionState.DIVERT_TO_TARGET
+        )
+
+        rospy.loginfo(
+            "[GUIDANCE] Target diversion: "
+            "type=%s, target=(%.2f, %.2f), "
+            "resume WP=%d.",
+            target_type,
+            target_x,
+            target_y,
+            interrupted_waypoint_index + 1,
+        )
+
+        # --------------------------------------------------------
+        # 1. Fly horizontally above target
+        # --------------------------------------------------------
+
+        result = self.fly_to(
+            approach_waypoint,
+            "Fly above target at search height",
+            allow_roi_interrupt=False,
+        )
+
+        if result != MotionResult.SUCCEEDED:
+
+            return result
+
+        result = self.interruptible_wait(
+            self.approach_pause,
+            "stabilise above target",
+        )
+
+        if result != MotionResult.SUCCEEDED:
+
+            return result
+
+        # --------------------------------------------------------
+        # 2. Descend to payload height
+        # --------------------------------------------------------
+
+        result = self.fly_to(
+            payload_waypoint,
+            "Descend to payload height "
+            "{:.2f} m".format(
+                self.payload_height
+            ),
+            allow_roi_interrupt=False,
+        )
+
+        if result != MotionResult.SUCCEEDED:
+
+            return result
+
+        result = self.interruptible_wait(
+            self.payload_settle_pause,
+            "stabilise at payload height",
+        )
+
+        if result != MotionResult.SUCCEEDED:
+
+            return result
+
+        rospy.loginfo(
+            "[GUIDANCE] Reached payload target."
+        )
+
+        result = self.interruptible_wait(
+            self.target_pause,
+            "hold above target before deployment",
+        )
+
+        if result != MotionResult.SUCCEEDED:
+
+            return result
+
+        # --------------------------------------------------------
+        # 3. Deploy payload
+        # --------------------------------------------------------
+
+        self.set_state(
+            MissionState.DEPLOY_PAYLOAD
+        )
+
+        payload_result = (
+            self.request_payload(
+                payload_code
+            )
+        )
+
+        if payload_result in (
+            MotionResult.LOW_BATTERY,
+            MotionResult.SHUTDOWN,
+        ):
+
+            return payload_result
+
+        # Preserve existing behaviour:
+        # payload timeout does not abort mission.
+
+        result = self.interruptible_wait(
+            self.post_payload_pause,
+            "post-deployment pause",
+        )
+
+        if result != MotionResult.SUCCEEDED:
+
+            return result
+
+        # --------------------------------------------------------
+        # 4. Climb back to normal flight height
+        # --------------------------------------------------------
+
+        self.set_state(
+            MissionState.RETURN_TO_SEARCH
+        )
+
+        result = self.fly_to(
+            approach_waypoint,
+            "Climb back to search height",
+            allow_roi_interrupt=False,
+        )
+
+        if result != MotionResult.SUCCEEDED:
+
+            return result
+
+        result = self.interruptible_wait(
+            self.return_pause,
+            "stabilise before returning "
+            "to search path",
+        )
+
+        if result != MotionResult.SUCCEEDED:
+
+            return result
+
+        # --------------------------------------------------------
+        # 5. Return to interruption location
+        # --------------------------------------------------------
+
+        result = self.fly_to(
+            return_waypoint,
+            "Return to interrupted "
+            "search position",
+            allow_roi_interrupt=False,
+        )
+
+        if result != MotionResult.SUCCEEDED:
+
+            return result
+
+        rospy.loginfo(
+            "[GUIDANCE] Diversion complete. "
+            "Resuming search from WP%d.",
+            interrupted_waypoint_index + 1,
+        )
+
+        return MotionResult.SUCCEEDED
+
+    # ============================================================
+    # Search mission
+    # ============================================================
+
+    def run_search(self):
+
+        self.set_state(
+            MissionState.SEARCH
+        )
+
+        if (
+            self.enable_roi_after_waypoint
+            == 0
+        ):
+
+            self.enable_roi_commands()
+
+        while (
+            self.current_waypoint_index
+            < len(self.waypoints)
+            and not rospy.is_shutdown()
+        ):
+
+            # ----------------------------------------------------
+            # Low-battery check
+            # ----------------------------------------------------
+
+            if self.low_battery_event:
+
+                return (
+                    MotionResult.LOW_BATTERY
+                )
+
+            # ----------------------------------------------------
+            # Process queued ROI information
+            # ----------------------------------------------------
+
+            self._process_roi_requests(
+                allow_target_interrupt=(
+                    self.roi_enabled
+                )
+            )
+
+            # ----------------------------------------------------
+            # Handle target received between movement commands
+            # ----------------------------------------------------
+
+            if (
+                self.roi_enabled
+                and self._has_target_roi()
+            ):
+
+                request = (
+                    self._pop_target_roi()
+                )
+
+                return_waypoint = (
+                    self._get_current_position()
+                )
+
+                if (
+                    request is None
+                    or return_waypoint is None
+                ):
+
+                    rospy.logerr(
+                        "[GUIDANCE] ROI diversion "
+                        "data unavailable."
+                    )
+
+                    return MotionResult.FAILED
+
+                (
+                    target_type,
+                    roi_pose,
+                ) = request
+
+                result = (
+                    self.handle_target_diversion(
+                        target_type,
+                        roi_pose,
+                        return_waypoint,
+                        self.current_waypoint_index,
+                    )
+                )
+
+                if (
+                    result
+                    != MotionResult.SUCCEEDED
+                ):
+
+                    return result
+
+                self.set_state(
+                    MissionState.SEARCH
+                )
+
+                continue
+
+            # ----------------------------------------------------
+            # Build normal search waypoint
+            # ----------------------------------------------------
+
+            configured_waypoint = (
+                self.waypoints[
+                    self.current_waypoint_index
+                ]
+            )
+
+            search_waypoint = (
+                self.build_search_waypoint(
+                    configured_waypoint
+                )
+            )
+
+            rospy.loginfo(
+                "[GUIDANCE] Search WP%d/%d -> "
+                "(%.2f, %.2f, %.2f, yaw=%.2f).",
+                self.current_waypoint_index + 1,
+                len(self.waypoints),
+                search_waypoint[0],
+                search_waypoint[1],
+                search_waypoint[2],
+                search_waypoint[3],
+            )
+
+            result = self.fly_to(
+                search_waypoint,
+                "Search waypoint {}/{}".format(
+                    self.current_waypoint_index + 1,
+                    len(self.waypoints),
+                ),
+                allow_roi_interrupt=(
+                    self.roi_enabled
+                ),
+            )
+
+            # ----------------------------------------------------
+            # Waypoint reached normally
+            # ----------------------------------------------------
+
+            if (
+                result
+                == MotionResult.SUCCEEDED
+            ):
+
+                self.log_completed_waypoint(
+                    self.current_waypoint_index,
+                    search_waypoint,
+                )
+
+                self.current_waypoint_index += 1
+
+                # Enable ROI publication after the configured
+                # number of completed search waypoints.
+
+                if (
+                    not self.roi_enabled
+                    and self.current_waypoint_index
+                    >= self.enable_roi_after_waypoint
+                ):
+
+                    self.enable_roi_commands()
+
+                continue
+
+            # ----------------------------------------------------
+            # Waypoint interrupted by P/B target
+            # ----------------------------------------------------
+
+            if (
+                result
+                == MotionResult.ROI_INTERRUPT
+            ):
+
+                return_waypoint = (
+                    self._get_current_position()
+                )
+
+                request = (
+                    self._pop_target_roi()
+                )
+
+                if (
+                    return_waypoint is None
+                    or request is None
+                ):
+
+                    rospy.logerr(
+                        "[GUIDANCE] ROI interruption "
+                        "occurred but required data "
+                        "is unavailable."
+                    )
+
+                    return MotionResult.FAILED
+
+                (
+                    target_type,
+                    roi_pose,
+                ) = request
+
+                result = (
+                    self.handle_target_diversion(
+                        target_type,
+                        roi_pose,
+                        return_waypoint,
+                        self.current_waypoint_index,
+                    )
+                )
+
+                if (
+                    result
+                    != MotionResult.SUCCEEDED
+                ):
+
+                    return result
+
+                self.set_state(
+                    MissionState.SEARCH
+                )
+
+                # Do not increment the waypoint index.
+                # The interrupted waypoint is sent again.
+
+                continue
+
+            # ----------------------------------------------------
+            # All other results leave search
+            # ----------------------------------------------------
+
+            return result
+
+        if rospy.is_shutdown():
+
+            return MotionResult.SHUTDOWN
+
+        return MotionResult.SUCCEEDED
+
+    # ============================================================
+    # Final landing approach
+    # ============================================================
+
+    def perform_final_approach(self):
+
+        self.set_state(
+            MissionState.FINAL_APPROACH
+        )
+
+        self.disable_roi_commands()
+
+        # Store any final ArUco message received
+        # before ROI publication was disabled.
+
+        self._process_roi_requests(
+            allow_target_interrupt=False
+        )
+
+        if self.low_battery_event:
+
+            rospy.logwarn(
+                "[GUIDANCE] Low battery active. "
+                "Skipping ArUco final approach "
+                "and landing at current position."
+            )
+
+            return (
+                MotionResult.LOW_BATTERY
+            )
+
+        if (
+            self.aruco_landing_roi
+            is None
+        ):
+
+            rospy.logwarn(
+                "[GUIDANCE] No ArUco landing "
+                "ROI stored. Landing at final "
+                "search waypoint."
+            )
+
+            return MotionResult.SUCCEEDED
+
+        rospy.loginfo(
+            "[GUIDANCE] Flying to stored "
+            "ArUco landing ROI."
+        )
+
+        return self.fly_to(
+            self.aruco_landing_roi,
+            "Final approach to "
+            "ArUco landing ROI",
+            allow_roi_interrupt=False,
+        )
+
+    # ============================================================
+    # Landing
+    # ============================================================
+
+    def perform_landing(self):
+
+        self.disable_roi_commands()
+
+        self.set_state(
+            MissionState.LANDING
+        )
+
+        result = self.land()
+
+        if (
+            result
+            == MotionResult.SUCCEEDED
+        ):
+
+            self.set_state(
+                MissionState.COMPLETE
+            )
+
+            rospy.loginfo(
+                "[GUIDANCE] Mission complete. "
+                "%d search waypoints logged; "
+                "%d ArUco log messages stored.",
+                len(self.waypoint_log),
+                len(self.aruco_log),
+            )
+
+            return MotionResult.SUCCEEDED
+
+        self.abort_mission(
+            "Landing failed with "
+            "result {}.".format(
+                result.name
+            )
+        )
+
+        return result
+
+    # ============================================================
+    # Mission abort
+    # ============================================================
+
+    def abort_mission(
+        self,
+        reason,
+    ):
+
+        self.cancel_motion()
+
+        self.disable_roi_commands()
+
+        self.set_state(
+            MissionState.ABORTED
+        )
+
+        rospy.logerr(
+            "[GUIDANCE] Mission aborted: %s",
+            reason,
+        )
+
+    # ============================================================
+    # Top-level mission sequence
+    # ============================================================
+
+    def run(self):
+
+        rospy.loginfo(
+            "[GUIDANCE] Waiting for SPAR "
+            "flight server."
+        )
+
+        rospy.loginfo(
+            "[GUIDANCE] Pilot: ARM aircraft "
+            "and select OFFBOARD when ready "
+            "for autonomous flight."
+        )
+
+        # SPAR exposes /spar/flight only after:
+        #   - MAVROS connected
+        #   - valid pose available
+        #   - aircraft armed
+        #   - OFFBOARD selected
+
+        self.spar_client.wait_for_server()
+
+        if rospy.is_shutdown():
+
+            return
+
+        rospy.loginfo(
+            "[GUIDANCE] SPAR flight server "
+            "available."
+        )
+
+        # Guidance also needs its own pose for
+        # waypoint logging and diversion return.
+
+        while (
+            self.current_pose is None
+            and not rospy.is_shutdown()
+        ):
+
+            rospy.logwarn_throttle(
+                2.0,
+                "[GUIDANCE] Waiting for UAV "
+                "pose on %s.",
+                self.topic_pose,
+            )
+
+            rospy.sleep(
+                0.1
+            )
+
+        if rospy.is_shutdown():
+
+            return
+
+        # --------------------------------------------------------
+        # Pre-flight battery check
+        # --------------------------------------------------------
+
+        if self.low_battery_event:
+
+            self.abort_mission(
+                "Battery already below landing "
+                "threshold before takeoff."
+            )
+
+            return
+
+        # ========================================================
+        # TAKEOFF
+        # ========================================================
+
+        self.set_state(
+            MissionState.TAKEOFF
+        )
+
+        result = self.takeoff()
+
+        if (
+            result
+            == MotionResult.LOW_BATTERY
+        ):
+
+            rospy.logwarn(
+                "[GUIDANCE] Low battery "
+                "during takeoff. Landing."
+            )
+
+            self.perform_landing()
+
+            return
+
+        if (
+            result
+            != MotionResult.SUCCEEDED
+        ):
+
+            self.abort_mission(
+                "Takeoff failed with "
+                "result {}.".format(
+                    result.name
+                )
+            )
+
+            return
+
+        # ========================================================
+        # SEARCH / ROI / PAYLOAD
+        # ========================================================
+
+        result = self.run_search()
+
+        if (
+            result
+            == MotionResult.LOW_BATTERY
+        ):
+
+            rospy.logwarn(
+                "[GUIDANCE] Low-battery "
+                "landing requested."
+            )
+
+            self.perform_landing()
+
+            return
+
+        if (
+            result
+            != MotionResult.SUCCEEDED
+        ):
+
+            self.abort_mission(
+                "Search ended with "
+                "result {}.".format(
+                    result.name
+                )
+            )
+
+            return
+
+        # ========================================================
+        # FINAL APPROACH
+        # ========================================================
+
+        result = (
+            self.perform_final_approach()
+        )
+
+        if (
+            result
+            == MotionResult.LOW_BATTERY
+        ):
+
+            self.perform_landing()
+
+            return
+
+        if (
+            result
+            != MotionResult.SUCCEEDED
+        ):
+
+            self.abort_mission(
+                "Final approach failed with "
+                "result {}.".format(
+                    result.name
+                )
+            )
+
+            return
+
+        # ========================================================
+        # LAND
+        # ========================================================
+
+        self.perform_landing()
+
+    # ============================================================
+    # Shutdown
+    # ============================================================
+
+    def shutdown(self):
+
+        try:
+
+            self.pub_roi_enable.publish(
+                False
+            )
+
+        except Exception:
+
+            pass
+
+        try:
+
+            self.spar_client.cancel_goal()
+
+        except Exception:
+
+            pass
+
+        rospy.loginfo(
+            "[GUIDANCE] Guidance node stopped."
+        )
+
+
+# ============================================================
+# Main
+# ============================================================
+
+def main():
+
+    rospy.init_node(
+        "guidance"
+    )
+
+    try:
+
+        guidance = Guidance()
+
+        guidance.run()
+
+    except KeyError as exc:
+
+        rospy.logfatal(
+            "[GUIDANCE] Missing required "
+            "ROS parameter: %s",
+            exc,
+        )
+
+    except ValueError as exc:
+
+        rospy.logfatal(
+            "[GUIDANCE] Configuration error: %s",
+            exc,
+        )
+
+    except rospy.ROSInterruptException:
+
+        pass
+
+
+if __name__ == "__main__":
+
+    main()
