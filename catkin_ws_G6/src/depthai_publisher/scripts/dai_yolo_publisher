@@ -31,7 +31,7 @@ class YoloDetector():
     WORLD_POSITION_TOPIC = "/yolo/world_position"
 
     # Camera / YOLO settings
-    CONFIDENCE = 0.90
+    CONFIDENCE = 0.80
     IOU = 0.50
     CAMERA_FPS = 15.0
     JPEG_QUALITY = 95
@@ -41,7 +41,7 @@ class YoloDetector():
 
     # Detection filtering
     FILTER_WINDOW = 5
-    FRAMES_REQUIRED = 3
+    FRAMES_REQUIRED = 2
 
     # ROI publication filtering
     ROI_FRAMES_REQUIRED = 3
