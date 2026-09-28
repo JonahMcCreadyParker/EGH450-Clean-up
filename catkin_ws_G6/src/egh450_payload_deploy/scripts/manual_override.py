@@ -6,6 +6,11 @@ import sys
 import tty
 import termios
 
+
+from gpiozero.pins.pigpio import PiGPIOFactory
+factory = PiGPIOFactory()
+
+
 rospy.init_node('manual_override', anonymous=True)
 pub = rospy.Publisher('/motor_manual_override', String, queue_size=10)
 rospy.sleep(0.5)  # let the publisher register before we start sending
