@@ -5,4 +5,4 @@ Description: Description of spar_node
 Version: 0.0.0
 Cflags: -I${prefix}/include
 Libs: -L${prefix}/lib 
-Requires: 
+Requires: actionlib actionlib_msgs breadcrumb geometry_msgs mavros_msgs roscpp rospy sensor_msgs spar_msgs std_msgs

@@ -17,6 +17,7 @@ add_compile_options(-std=c++11)
 find_package(catkin REQUIRED COMPONENTS
   actionlib
   actionlib_msgs
+  breadcrumb
   geometry_msgs
   mavros_msgs
   roscpp
@@ -37,6 +38,7 @@ catkin_package(
   CATKIN_DEPENDS
     actionlib
     actionlib_msgs
+    breadcrumb
     geometry_msgs
     mavros_msgs
     roscpp

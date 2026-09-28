@@ -62,7 +62,7 @@ if(CMAKE_INSTALL_COMPONENT STREQUAL "Unspecified" OR NOT CMAKE_INSTALL_COMPONENT
 endif()
 
 if(CMAKE_INSTALL_COMPONENT STREQUAL "Unspecified" OR NOT CMAKE_INSTALL_COMPONENT)
-  file(INSTALL DESTINATION "${CMAKE_INSTALL_PREFIX}/lib/egb349_group8_vision" TYPE PROGRAM FILES "/home/uavteam6/EGB349_Project_eldrone/catkin_ws_G6/build/egb349_group8_vision/catkin_generated/installspace/aruco_detector_node.py")
+  file(INSTALL DESTINATION "${CMAKE_INSTALL_PREFIX}/lib/egb349_group8_vision" TYPE PROGRAM FILES "/home/uavteam6/EGB349_Project_eldrone/catkin_ws_G6/build/egb349_group8_vision/catkin_generated/installspace/aruco_detector.py")
 endif()
 
 string(REPLACE ";" "\n" CMAKE_INSTALL_MANIFEST_CONTENT

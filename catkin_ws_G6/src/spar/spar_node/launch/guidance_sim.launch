@@ -88,6 +88,137 @@
 
 
     <!-- ===================================================== -->
+    <!-- Occupancy Grid                                       -->
+    <!-- ===================================================== -->
+
+    <node
+        pkg="qutas_lab_450"
+        type="area_map_node"
+        name="area_map"
+        clear_params="true"
+        output="screen"
+    >
+
+        <remap
+            from="~/grid"
+            to="/grid"
+        />
+
+        <param
+            name="frame_id"
+            value="map"
+            type="str"
+        />
+
+        <rosparam
+            command="load"
+            file="$(find qutas_lab_450)/launch/map_layout.yaml"
+        />
+
+    </node>
+
+
+    <!-- ===================================================== -->
+    <!-- Breadcrumb Path Planner                              -->
+    <!-- ===================================================== -->
+
+    <node
+        pkg="breadcrumb"
+        type="breadcrumb_node"
+        name="breadcrumb"
+        clear_params="true"
+        output="screen"
+    >
+
+        <!-- A* search configuration -->
+
+        <param
+            name="search_heuristic"
+            value="1"
+            type="int"
+        />
+
+        <param
+            name="allow_diagonals"
+            value="true"
+            type="bool"
+        />
+
+        <param
+            name="any_angle"
+            value="true"
+            type="bool"
+        />
+
+        <param
+            name="obstacle_threshold"
+            value="1"
+            type="int"
+        />
+
+        <param
+            name="calc_sparse_path"
+            value="true"
+            type="bool"
+        />
+
+        <!-- Keep planning inside the permitted mission area -->
+
+        <param
+            name="enforce_bounds"
+            value="true"
+            type="bool"
+        />
+
+        <param
+            name="x_min"
+            value="-4.0"
+            type="double"
+        />
+
+        <param
+            name="x_max"
+            value="4.0"
+            type="double"
+        />
+
+        <param
+            name="y_min"
+            value="-3.2"
+            type="double"
+        />
+
+        <param
+            name="y_max"
+            value="2.0"
+            type="double"
+        />
+
+        <param
+            name="z_min"
+            value="0.5"
+            type="double"
+        />
+
+        <param
+            name="z_max"
+            value="4.0"
+            type="double"
+        />
+
+        <!-- Breadcrumb receives the occupancy grid here -->
+
+        <remap
+            from="~grid"
+            to="/grid"
+        />
+
+    </node>
+
+
+    
+
+    <!-- ===================================================== -->
     <!-- Guidance                                              -->
     <!-- ===================================================== -->
 

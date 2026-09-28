@@ -5,4 +5,4 @@ Description: Description of spar_node
 Version: 0.0.0
 Cflags: -I/home/uavteam6/EGB349_Project_eldrone/catkin_ws_G6/src/spar/spar_node/include
 Libs: -L${prefix}/lib 
-Requires: 
+Requires: actionlib actionlib_msgs breadcrumb geometry_msgs mavros_msgs roscpp rospy sensor_msgs spar_msgs std_msgs

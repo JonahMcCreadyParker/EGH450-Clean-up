@@ -73,6 +73,7 @@ all: rqt_mavros_gui/all
 all: rqt_quaternion_view/all
 all: breadcrumb/all
 all: depthai_publisher/all
+all: egh450_payload_deploy/all
 all: qutas_lab_450/all
 all: egb349_group8_vision/all
 all: spar/spar_msgs/all
@@ -97,6 +98,7 @@ codegen: rqt_mavros_gui/codegen
 codegen: rqt_quaternion_view/codegen
 codegen: breadcrumb/codegen
 codegen: depthai_publisher/codegen
+codegen: egh450_payload_deploy/codegen
 codegen: qutas_lab_450/codegen
 codegen: egb349_group8_vision/codegen
 codegen: spar/spar_msgs/codegen
@@ -121,6 +123,7 @@ preinstall: rqt_mavros_gui/preinstall
 preinstall: rqt_quaternion_view/preinstall
 preinstall: breadcrumb/preinstall
 preinstall: depthai_publisher/preinstall
+preinstall: egh450_payload_deploy/preinstall
 preinstall: qutas_lab_450/preinstall
 preinstall: egb349_group8_vision/preinstall
 preinstall: spar/spar_msgs/preinstall
@@ -150,6 +153,7 @@ clean: rqt_mavros_gui/clean
 clean: rqt_quaternion_view/clean
 clean: breadcrumb/clean
 clean: depthai_publisher/clean
+clean: egh450_payload_deploy/clean
 clean: qutas_lab_450/clean
 clean: egb349_group8_vision/clean
 clean: spar/spar_msgs/clean
@@ -506,6 +510,25 @@ egh450_image_processor/clean: egh450_image_processor/CMakeFiles/geometry_msgs_ge
 egh450_image_processor/clean: egh450_image_processor/CMakeFiles/geometry_msgs_generate_messages_nodejs.dir/clean
 egh450_image_processor/clean: egh450_image_processor/CMakeFiles/geometry_msgs_generate_messages_py.dir/clean
 .PHONY : egh450_image_processor/clean
+
+#=============================================================================
+# Directory level rules for directory egh450_payload_deploy
+
+# Recursive "all" directory target.
+egh450_payload_deploy/all:
+.PHONY : egh450_payload_deploy/all
+
+# Recursive "codegen" directory target.
+egh450_payload_deploy/codegen:
+.PHONY : egh450_payload_deploy/codegen
+
+# Recursive "preinstall" directory target.
+egh450_payload_deploy/preinstall:
+.PHONY : egh450_payload_deploy/preinstall
+
+# Recursive "clean" directory target.
+egh450_payload_deploy/clean:
+.PHONY : egh450_payload_deploy/clean
 
 #=============================================================================
 # Directory level rules for directory egh450_target_solvepnp
@@ -5501,6 +5524,12 @@ spar/spar_node/CMakeFiles/spar_node_spar.dir/all: egh450_target_solvepnp/CMakeFi
 spar/spar_node/CMakeFiles/spar_node_spar.dir/all: egh450_target_solvepnp/CMakeFiles/rosgraph_msgs_generate_messages_lisp.dir/all
 spar/spar_node/CMakeFiles/spar_node_spar.dir/all: egh450_target_solvepnp/CMakeFiles/rosgraph_msgs_generate_messages_nodejs.dir/all
 spar/spar_node/CMakeFiles/spar_node_spar.dir/all: egh450_target_solvepnp/CMakeFiles/rosgraph_msgs_generate_messages_py.dir/all
+spar/spar_node/CMakeFiles/spar_node_spar.dir/all: breadcrumb/CMakeFiles/breadcrumb_generate_messages_cpp.dir/all
+spar/spar_node/CMakeFiles/spar_node_spar.dir/all: breadcrumb/CMakeFiles/breadcrumb_generate_messages_eus.dir/all
+spar/spar_node/CMakeFiles/spar_node_spar.dir/all: breadcrumb/CMakeFiles/breadcrumb_generate_messages_lisp.dir/all
+spar/spar_node/CMakeFiles/spar_node_spar.dir/all: breadcrumb/CMakeFiles/breadcrumb_generate_messages_nodejs.dir/all
+spar/spar_node/CMakeFiles/spar_node_spar.dir/all: breadcrumb/CMakeFiles/breadcrumb_generate_messages_py.dir/all
+spar/spar_node/CMakeFiles/spar_node_spar.dir/all: breadcrumb/CMakeFiles/breadcrumb_gencfg.dir/all
 spar/spar_node/CMakeFiles/spar_node_spar.dir/all: qutas_lab_450/CMakeFiles/mavros_msgs_generate_messages_cpp.dir/all
 spar/spar_node/CMakeFiles/spar_node_spar.dir/all: qutas_lab_450/CMakeFiles/mavros_msgs_generate_messages_eus.dir/all
 spar/spar_node/CMakeFiles/spar_node_spar.dir/all: qutas_lab_450/CMakeFiles/mavros_msgs_generate_messages_lisp.dir/all
@@ -5528,7 +5557,7 @@ spar/spar_node/CMakeFiles/spar_node_spar.dir/all: spar/spar_msgs/CMakeFiles/spar
 
 # Build rule for subdir invocation for target.
 spar/spar_node/CMakeFiles/spar_node_spar.dir/rule: cmake_check_build_system
-	$(CMAKE_COMMAND) -E cmake_progress_start /home/uavteam6/EGB349_Project_eldrone/catkin_ws_G6/build/CMakeFiles 18
+	$(CMAKE_COMMAND) -E cmake_progress_start /home/uavteam6/EGB349_Project_eldrone/catkin_ws_G6/build/CMakeFiles 22
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 spar/spar_node/CMakeFiles/spar_node_spar.dir/all
 	$(CMAKE_COMMAND) -E cmake_progress_start /home/uavteam6/EGB349_Project_eldrone/catkin_ws_G6/build/CMakeFiles 0
 .PHONY : spar/spar_node/CMakeFiles/spar_node_spar.dir/rule
@@ -5574,6 +5603,12 @@ spar/spar_node/CMakeFiles/spar_node_spar.dir/codegen: egh450_target_solvepnp/CMa
 spar/spar_node/CMakeFiles/spar_node_spar.dir/codegen: egh450_target_solvepnp/CMakeFiles/rosgraph_msgs_generate_messages_lisp.dir/all
 spar/spar_node/CMakeFiles/spar_node_spar.dir/codegen: egh450_target_solvepnp/CMakeFiles/rosgraph_msgs_generate_messages_nodejs.dir/all
 spar/spar_node/CMakeFiles/spar_node_spar.dir/codegen: egh450_target_solvepnp/CMakeFiles/rosgraph_msgs_generate_messages_py.dir/all
+spar/spar_node/CMakeFiles/spar_node_spar.dir/codegen: breadcrumb/CMakeFiles/breadcrumb_generate_messages_cpp.dir/all
+spar/spar_node/CMakeFiles/spar_node_spar.dir/codegen: breadcrumb/CMakeFiles/breadcrumb_generate_messages_eus.dir/all
+spar/spar_node/CMakeFiles/spar_node_spar.dir/codegen: breadcrumb/CMakeFiles/breadcrumb_generate_messages_lisp.dir/all
+spar/spar_node/CMakeFiles/spar_node_spar.dir/codegen: breadcrumb/CMakeFiles/breadcrumb_generate_messages_nodejs.dir/all
+spar/spar_node/CMakeFiles/spar_node_spar.dir/codegen: breadcrumb/CMakeFiles/breadcrumb_generate_messages_py.dir/all
+spar/spar_node/CMakeFiles/spar_node_spar.dir/codegen: breadcrumb/CMakeFiles/breadcrumb_gencfg.dir/all
 spar/spar_node/CMakeFiles/spar_node_spar.dir/codegen: qutas_lab_450/CMakeFiles/mavros_msgs_generate_messages_cpp.dir/all
 spar/spar_node/CMakeFiles/spar_node_spar.dir/codegen: qutas_lab_450/CMakeFiles/mavros_msgs_generate_messages_eus.dir/all
 spar/spar_node/CMakeFiles/spar_node_spar.dir/codegen: qutas_lab_450/CMakeFiles/mavros_msgs_generate_messages_lisp.dir/all
@@ -5643,6 +5678,12 @@ spar/spar_node/CMakeFiles/spar_node.dir/all: egh450_target_solvepnp/CMakeFiles/r
 spar/spar_node/CMakeFiles/spar_node.dir/all: egh450_target_solvepnp/CMakeFiles/rosgraph_msgs_generate_messages_lisp.dir/all
 spar/spar_node/CMakeFiles/spar_node.dir/all: egh450_target_solvepnp/CMakeFiles/rosgraph_msgs_generate_messages_nodejs.dir/all
 spar/spar_node/CMakeFiles/spar_node.dir/all: egh450_target_solvepnp/CMakeFiles/rosgraph_msgs_generate_messages_py.dir/all
+spar/spar_node/CMakeFiles/spar_node.dir/all: breadcrumb/CMakeFiles/breadcrumb_generate_messages_cpp.dir/all
+spar/spar_node/CMakeFiles/spar_node.dir/all: breadcrumb/CMakeFiles/breadcrumb_generate_messages_eus.dir/all
+spar/spar_node/CMakeFiles/spar_node.dir/all: breadcrumb/CMakeFiles/breadcrumb_generate_messages_lisp.dir/all
+spar/spar_node/CMakeFiles/spar_node.dir/all: breadcrumb/CMakeFiles/breadcrumb_generate_messages_nodejs.dir/all
+spar/spar_node/CMakeFiles/spar_node.dir/all: breadcrumb/CMakeFiles/breadcrumb_generate_messages_py.dir/all
+spar/spar_node/CMakeFiles/spar_node.dir/all: breadcrumb/CMakeFiles/breadcrumb_gencfg.dir/all
 spar/spar_node/CMakeFiles/spar_node.dir/all: qutas_lab_450/CMakeFiles/mavros_msgs_generate_messages_cpp.dir/all
 spar/spar_node/CMakeFiles/spar_node.dir/all: qutas_lab_450/CMakeFiles/mavros_msgs_generate_messages_eus.dir/all
 spar/spar_node/CMakeFiles/spar_node.dir/all: qutas_lab_450/CMakeFiles/mavros_msgs_generate_messages_lisp.dir/all
@@ -5671,7 +5712,7 @@ spar/spar_node/CMakeFiles/spar_node.dir/all: spar/spar_node/CMakeFiles/spar_node
 
 # Build rule for subdir invocation for target.
 spar/spar_node/CMakeFiles/spar_node.dir/rule: cmake_check_build_system
-	$(CMAKE_COMMAND) -E cmake_progress_start /home/uavteam6/EGB349_Project_eldrone/catkin_ws_G6/build/CMakeFiles 19
+	$(CMAKE_COMMAND) -E cmake_progress_start /home/uavteam6/EGB349_Project_eldrone/catkin_ws_G6/build/CMakeFiles 23
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 spar/spar_node/CMakeFiles/spar_node.dir/all
 	$(CMAKE_COMMAND) -E cmake_progress_start /home/uavteam6/EGB349_Project_eldrone/catkin_ws_G6/build/CMakeFiles 0
 .PHONY : spar/spar_node/CMakeFiles/spar_node.dir/rule
@@ -5717,6 +5758,12 @@ spar/spar_node/CMakeFiles/spar_node.dir/codegen: egh450_target_solvepnp/CMakeFil
 spar/spar_node/CMakeFiles/spar_node.dir/codegen: egh450_target_solvepnp/CMakeFiles/rosgraph_msgs_generate_messages_lisp.dir/all
 spar/spar_node/CMakeFiles/spar_node.dir/codegen: egh450_target_solvepnp/CMakeFiles/rosgraph_msgs_generate_messages_nodejs.dir/all
 spar/spar_node/CMakeFiles/spar_node.dir/codegen: egh450_target_solvepnp/CMakeFiles/rosgraph_msgs_generate_messages_py.dir/all
+spar/spar_node/CMakeFiles/spar_node.dir/codegen: breadcrumb/CMakeFiles/breadcrumb_generate_messages_cpp.dir/all
+spar/spar_node/CMakeFiles/spar_node.dir/codegen: breadcrumb/CMakeFiles/breadcrumb_generate_messages_eus.dir/all
+spar/spar_node/CMakeFiles/spar_node.dir/codegen: breadcrumb/CMakeFiles/breadcrumb_generate_messages_lisp.dir/all
+spar/spar_node/CMakeFiles/spar_node.dir/codegen: breadcrumb/CMakeFiles/breadcrumb_generate_messages_nodejs.dir/all
+spar/spar_node/CMakeFiles/spar_node.dir/codegen: breadcrumb/CMakeFiles/breadcrumb_generate_messages_py.dir/all
+spar/spar_node/CMakeFiles/spar_node.dir/codegen: breadcrumb/CMakeFiles/breadcrumb_gencfg.dir/all
 spar/spar_node/CMakeFiles/spar_node.dir/codegen: qutas_lab_450/CMakeFiles/mavros_msgs_generate_messages_cpp.dir/all
 spar/spar_node/CMakeFiles/spar_node.dir/codegen: qutas_lab_450/CMakeFiles/mavros_msgs_generate_messages_eus.dir/all
 spar/spar_node/CMakeFiles/spar_node.dir/codegen: qutas_lab_450/CMakeFiles/mavros_msgs_generate_messages_lisp.dir/all

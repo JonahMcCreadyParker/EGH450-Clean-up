@@ -1,7 +1,7 @@
 # generated from catkin/cmake/template/pkg.context.pc.in
 CATKIN_PACKAGE_PREFIX = ""
 PROJECT_PKG_CONFIG_INCLUDE_DIRS = "/home/uavteam6/EGB349_Project_eldrone/catkin_ws_G6/src/spar/spar_node/include".split(';') if "/home/uavteam6/EGB349_Project_eldrone/catkin_ws_G6/src/spar/spar_node/include" != "" else []
-PROJECT_CATKIN_DEPENDS = "".replace(';', ' ')
+PROJECT_CATKIN_DEPENDS = "actionlib;actionlib_msgs;breadcrumb;geometry_msgs;mavros_msgs;roscpp;rospy;sensor_msgs;spar_msgs;std_msgs".replace(';', ' ')
 PKG_CONFIG_LIBRARIES_WITH_PREFIX = "".split(';') if "" != "" else []
 PROJECT_NAME = "spar_node"
 PROJECT_SPACE_DIR = "/home/uavteam6/EGB349_Project_eldrone/catkin_ws_G6/devel"

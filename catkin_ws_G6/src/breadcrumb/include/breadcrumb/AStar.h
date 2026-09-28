@@ -27,6 +27,14 @@ namespace AStar
     struct Node
     {
         uint G, H;
+
+        // Secondary path-selection cost.
+        //
+        // G remains the true movement cost.
+        // D records accumulated deviation from the nominal
+        // start-to-target line for axis-aligned requests.
+        uint D;
+
         Vec2i coordinates;
         const Node *parent;
 
@@ -64,7 +72,12 @@ namespace AStar
         void clearCollisions();
         void setThetaStar(bool enable_);
 
-        NodeCost computeCost(const Node* current, Node* successor, const uint c) const;
+        NodeCost computeCost(
+            const Node* current,
+            Node* successor,
+            const uint c,
+            const bool use_theta_for_request
+        ) const;
         uint getStraightLineCost(uint step) const;
 
     private:

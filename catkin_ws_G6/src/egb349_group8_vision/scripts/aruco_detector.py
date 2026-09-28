@@ -119,6 +119,18 @@ class ArucoDetector():
                 cv2.aruco.DetectorParameters()
             )
 
+        # Slightly loosen ArUco detection for
+        # smaller / more distant markers.
+        self.aruco_params.adaptiveThreshWinSizeMin = 3
+        self.aruco_params.adaptiveThreshWinSizeMax = 53
+        self.aruco_params.adaptiveThreshWinSizeStep = 4
+
+        self.aruco_params.minMarkerPerimeterRate = 0.015
+
+        self.aruco_params.cornerRefinementMethod = (
+            cv2.aruco.CORNER_REFINE_SUBPIX
+        )
+
         # Camera calibration
         self.camera_info_sub = rospy.Subscriber(
             self.CAMERA_INFO_TOPIC,

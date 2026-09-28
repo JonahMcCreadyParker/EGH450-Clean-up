@@ -169,7 +169,7 @@ bool Breadcrumb::request_path(breadcrumb::RequestPath::Request& req, breadcrumb:
 				ROS_DEBUG("[Breadcrumb] Path: %d, %d", path[k].x, path[k].y);
 
 				//Only calculate if we should, and we're testing a final pass
-				if( param_calc_sparse_ && !param_theta_star_ ) {
+				if( param_calc_sparse_ ) {
 					if( (k > 0) && (k < sk_last) ) {
 						//Calculate the angle from the last sparse step (sk_last) to k.
 						double dx = path[k].x - path[sk_last].x;
@@ -229,7 +229,143 @@ void Breadcrumb::callback_grid(const nav_msgs::OccupancyGrid::ConstPtr& msg_in) 
 	astar_.setWorldSize({(int)msg_in->info.width, (int)msg_in->info.height});
 	astar_.clearCollisions();
 
-	// 1) Collect occupied cells first (so we can inflate them)
+	// ------------------------------------------------------------
+	// 1) Collect collision cells
+	//
+	// Keep two separate lists:
+	//
+	//   base_collision_cells
+	//       Everything that must be impassable, including the
+	//       occupancy-grid border and enforced planner bounds.
+	//
+	//   inflatable_obstacle_cells
+	//       Actual internal obstacles only. These receive the
+	//       configured physical clearance margin.
+	//
+	// This prevents the 0.4 m obstacle padding from unnecessarily
+	// shrinking the usable flight area near the map boundary.
+	// ------------------------------------------------------------
+
+	std::vector<std::pair<int,int>>
+		base_collision_cells;
+
+	std::vector<std::pair<int,int>>
+		inflatable_obstacle_cells;
+
+	base_collision_cells.reserve(
+		msg_in->info.width
+		* msg_in->info.height
+		/ 10
+	);
+
+	inflatable_obstacle_cells.reserve(
+		msg_in->info.width
+		* msg_in->info.height
+		/ 10
+	);
+
+	for (
+		int j = 0;
+		j < (int)msg_in->info.height;
+		++j
+	) {
+
+		for (
+			int i = 0;
+			i < (int)msg_in->info.width;
+			++i
+		) {
+
+			const int idx =
+				i
+				+ j * msg_in->info.width;
+
+			// World centre of this grid cell.
+			double wx =
+				(i + 0.5)
+				* msg_in->info.resolution
+				+ msg_in->info.origin.position.x;
+
+			double wy =
+				(j + 0.5)
+				* msg_in->info.resolution
+				+ msg_in->info.origin.position.y;
+
+			bool out_of_box = false;
+
+			if (enforce_bounds_) {
+
+				out_of_box =
+					(
+						wx < x_min_
+						|| wx > x_max_
+						|| wy < y_min_
+						|| wy > y_max_
+					);
+			}
+
+			const int v =
+				msg_in->data[idx];
+
+			const bool unknown =
+				(v < 0);
+
+			const bool occupied =
+				(
+					v
+					> param_obstacle_threshold_
+				);
+
+			// Detect the occupancy-grid border separately.
+			const bool map_border =
+				(
+					i == 0
+					|| j == 0
+					|| i
+					   == (
+						   (int)msg_in->info.width
+						   - 1
+					   )
+					|| j
+					   == (
+						   (int)msg_in->info.height
+						   - 1
+					   )
+				);
+
+			// All of these cells remain completely impassable.
+			if (
+				out_of_box
+				|| unknown
+				|| occupied
+			) {
+
+				base_collision_cells.emplace_back(
+					i,
+					j
+				);
+			}
+
+			// Only genuine internal occupied cells receive the
+			// additional obstacle-clearance inflation.
+			//
+			// Do not inflate:
+			//   - map border
+			//   - bounds mask
+			//   - unknown cells
+			if (
+				occupied
+				&& !map_border
+				&& !out_of_box
+			) {
+
+				inflatable_obstacle_cells.emplace_back(
+					i,
+					j
+				);
+			}
+		}
+	}// 1) Collect occupied cells first (so we can inflate them)
 	std::vector<std::pair<int,int>> occupied_cells;
 	occupied_cells.reserve(msg_in->info.width * msg_in->info.height / 10);
 
@@ -258,7 +394,7 @@ void Breadcrumb::callback_grid(const nav_msgs::OccupancyGrid::ConstPtr& msg_in) 
 	}
 
 	// 2) Inflate those cells by a fixed radius in meters
-	const double INFLATE_M = 0.2; // desired extra clearance
+	const double INFLATE_M = 0.4; // desired extra clearance
 	const int r = std::max(1, (int)std::ceil(INFLATE_M / msg_in->info.resolution));
 	const int W = (int)msg_in->info.width;
 	const int H = (int)msg_in->info.height;
@@ -266,13 +402,33 @@ void Breadcrumb::callback_grid(const nav_msgs::OccupancyGrid::ConstPtr& msg_in) 
 	// Optional: mask to avoid duplicate inserts
 	std::vector<uint8_t> mask(W * H, 0);
 
-	// Seed mask with the base occupied cells
-	for (auto [i,j] : occupied_cells) {
-		if (i >= 0 && i < W && j >= 0 && j < H) mask[i + j*W] = 1;
+	// Seed the mask with all base collision cells.
+	//
+	// These remain impassable but are not necessarily inflated.
+	for (
+		auto [i, j]
+		: base_collision_cells
+	) {
+
+		if (
+			i >= 0
+			&& i < W
+			&& j >= 0
+			&& j < H
+		) {
+
+			mask[
+				i
+				+ j * W
+			] = 1;
+		}
 	}
 
-	// Grow each obstacle by 'r' cells (disc-shaped neighborhood)
-	for (auto [ci,cj] : occupied_cells) {
+	// Grow only genuine internal obstacles by 'r' cells.
+	for (
+		auto [ci, cj]
+		: inflatable_obstacle_cells
+	) {
 		for (int dj = -r; dj <= r; ++dj) {
 			for (int di = -r; di <= r; ++di) {
 				if (di*di + dj*dj > r*r) continue; // circle

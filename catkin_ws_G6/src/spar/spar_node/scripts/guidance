@@ -10,11 +10,13 @@ import actionlib
 import rospy
 
 from actionlib_msgs.msg import GoalStatus
-from geometry_msgs.msg import PoseStamped
+from geometry_msgs.msg import Point, PoseStamped
 from sensor_msgs.msg import BatteryState
 from std_msgs.msg import Bool, String
 
 from spar_msgs.msg import FlightMotionAction, FlightMotionGoal
+from breadcrumb.srv import RequestPath
+
 
 
 # ============================================================
@@ -203,6 +205,15 @@ class Guidance:
             FlightMotionAction,
         )
 
+        # --------------------------------------------------------
+        # Breadcrumb path-planning client
+        # --------------------------------------------------------
+
+        self.path_client = rospy.ServiceProxy(
+            self.breadcrumb_service,
+            RequestPath,
+        )
+
         rospy.on_shutdown(self.shutdown)
 
         self._log_configuration_summary()
@@ -322,6 +333,19 @@ class Guidance:
         # SPAR
         self.spar_action = p(
             "~spar/action"
+        )
+
+        # Breadcrumb path planning
+        self.breadcrumb_service = p(
+            "~navigation/breadcrumb_service"
+        )
+
+        self.breadcrumb_timeout = float(
+            p("~navigation/service_timeout")
+        )
+
+        self.use_sparse_path = bool(
+            p("~navigation/use_sparse_path")
         )
 
         # Mission
@@ -825,6 +849,354 @@ class Guidance:
             float(position.z),
             0.0,
         ]
+
+    # ============================================================
+    # Breadcrumb path planning
+    # ============================================================
+
+    def plan_path(
+        self,
+        destination,
+    ):
+        """
+        Request an obstacle-aware path from Breadcrumb.
+
+        This function currently operates in observation-only mode.
+        It calculates and logs the path, but does not command the
+        aircraft to follow it.
+
+        destination:
+            [X, Y, Z, Yaw]
+
+        Returns:
+            List of [X, Y, Z, Yaw] navigation points.
+
+            An empty list indicates that planning failed.
+        """
+
+        if self.current_pose is None:
+
+            rospy.logwarn(
+                "[GUIDANCE] Breadcrumb planning skipped: "
+                "current UAV pose unavailable."
+            )
+
+            return []
+
+        # --------------------------------------------------------
+        # Build Breadcrumb request
+        # --------------------------------------------------------
+
+        start = Point()
+
+        start.x = (
+            self.current_pose.pose.position.x
+        )
+
+        start.y = (
+            self.current_pose.pose.position.y
+        )
+
+        start.z = (
+            self.current_pose.pose.position.z
+        )
+
+        end = Point()
+
+        end.x = destination[0]
+        end.y = destination[1]
+        end.z = destination[2]
+
+        rospy.loginfo(
+            "[GUIDANCE] Breadcrumb request: "
+            "(%.2f, %.2f) -> (%.2f, %.2f)",
+            start.x,
+            start.y,
+            end.x,
+            end.y,
+        )
+
+        # --------------------------------------------------------
+        # Check that Breadcrumb is available
+        # --------------------------------------------------------
+
+        try:
+
+            rospy.wait_for_service(
+                self.breadcrumb_service,
+                timeout=self.breadcrumb_timeout,
+            )
+
+        except rospy.ROSException:
+
+            rospy.logwarn(
+                "[GUIDANCE] Breadcrumb service '%s' "
+                "not available within %.1f seconds.",
+                self.breadcrumb_service,
+                self.breadcrumb_timeout,
+            )
+
+            return []
+
+        # --------------------------------------------------------
+        # Request path
+        # --------------------------------------------------------
+
+        try:
+
+            response = self.path_client(
+                start=start,
+                end=end,
+            )
+
+        except rospy.ServiceException as exc:
+
+            rospy.logwarn(
+                "[GUIDANCE] Breadcrumb service call failed: %s",
+                exc,
+            )
+
+            return []
+
+        # --------------------------------------------------------
+        # Select returned path
+        #
+        # Current Breadcrumb behaviour may leave path_sparse
+        # empty while Theta* / any-angle planning is enabled.
+        # Therefore sparse path is preferred, but the full path
+        # is used automatically when sparse is unavailable.
+        # --------------------------------------------------------
+
+        if (
+            self.use_sparse_path
+            and len(response.path_sparse.poses) > 0
+        ):
+
+            poses = response.path_sparse.poses
+            path_type = "sparse"
+
+        else:
+
+            poses = response.path.poses
+            path_type = "full"
+
+        if len(poses) == 0:
+
+            rospy.logwarn(
+                "[GUIDANCE] Breadcrumb returned no valid path."
+            )
+
+            return []
+
+        # --------------------------------------------------------
+        # Convert Breadcrumb poses into Guidance waypoints
+        # --------------------------------------------------------
+
+        path = []
+
+        for pose in poses:
+
+            path.append(
+                [
+                    float(pose.position.x),
+                    float(pose.position.y),
+                    float(destination[2]),
+                    float(destination[3]),
+                ]
+            )
+
+        # --------------------------------------------------------
+        # Remove the first point if it is effectively the UAV's
+        # current position.
+        # --------------------------------------------------------
+
+        if len(path) > 1:
+
+            dx = (
+                path[0][0]
+                - start.x
+            )
+
+            dy = (
+                path[0][1]
+                - start.y
+            )
+
+            start_distance = math.sqrt(
+                dx * dx + dy * dy
+            )
+
+            if (
+                start_distance
+                <= self.position_tolerance
+            ):
+
+                path.pop(0)
+
+        # --------------------------------------------------------
+        # Log returned route
+        # --------------------------------------------------------
+
+        rospy.loginfo(
+            "[GUIDANCE] Breadcrumb returned "
+            "%d %s path point(s).",
+            len(path),
+            path_type,
+        )
+
+        for index, waypoint in enumerate(path):
+
+            rospy.loginfo(
+                "[GUIDANCE]   Path %d/%d: "
+                "x=%.2f, y=%.2f, z=%.2f",
+                index + 1,
+                len(path),
+                waypoint[0],
+                waypoint[1],
+                waypoint[2],
+            )
+
+        # --------------------------------------------------------
+        # Report if Breadcrumb moved the requested destination.
+        # This occurs when a nominal waypoint lies inside an
+        # obstacle or outside the permitted planning region.
+        # --------------------------------------------------------
+
+        if len(path) > 0:
+
+            final_waypoint = path[-1]
+
+            endpoint_error = math.sqrt(
+                (
+                    final_waypoint[0]
+                    - destination[0]
+                ) ** 2
+                +
+                (
+                    final_waypoint[1]
+                    - destination[1]
+                ) ** 2
+            )
+
+            if (
+                endpoint_error
+                > self.position_tolerance
+            ):
+
+                rospy.logwarn(
+                    "[GUIDANCE] Breadcrumb adjusted destination: "
+                    "requested=(%.2f, %.2f), "
+                    "safe=(%.2f, %.2f), "
+                    "difference=%.2f m.",
+                    destination[0],
+                    destination[1],
+                    final_waypoint[0],
+                    final_waypoint[1],
+                    endpoint_error,
+                )
+
+        return path
+
+    def navigate_to(
+        self,
+        destination,
+        description,
+        allow_roi_interrupt=False,
+    ):
+        """
+        Navigate to a destination using Breadcrumb.
+
+        Breadcrumb determines the safe horizontal route.
+        Each returned path point is then sent to the existing
+        SPAR fly_to() function.
+
+        destination:
+            [X, Y, Z, Yaw]
+
+        Returns:
+            MotionResult from the navigation attempt.
+        """
+
+        # --------------------------------------------------------
+        # Ask Breadcrumb for a safe route
+        # --------------------------------------------------------
+
+        path = self.plan_path(
+            destination
+        )
+
+        if len(path) == 0:
+
+            rospy.logerr(
+                "[GUIDANCE] Navigation failed: "
+                "Breadcrumb returned no valid path "
+                "for '%s'.",
+                description,
+            )
+
+            return MotionResult.FAILED
+
+        rospy.loginfo(
+            "[GUIDANCE] Executing Breadcrumb route "
+            "with %d point(s): %s",
+            len(path),
+            description,
+        )
+
+        # --------------------------------------------------------
+        # Fly each Breadcrumb path point using SPAR
+        # --------------------------------------------------------
+
+        for index, waypoint in enumerate(path):
+
+            rospy.loginfo(
+                "[GUIDANCE] Navigation point %d/%d -> "
+                "(%.2f, %.2f, %.2f)",
+                index + 1,
+                len(path),
+                waypoint[0],
+                waypoint[1],
+                waypoint[2],
+            )
+
+            result = self.fly_to(
+                waypoint,
+                "{} - path point {}/{}".format(
+                    description,
+                    index + 1,
+                    len(path),
+                ),
+                allow_roi_interrupt=(
+                    allow_roi_interrupt
+                ),
+            )
+
+            # Any interruption or failure from SPAR is immediately
+            # passed back to the mission controller.
+            if (
+                result
+                != MotionResult.SUCCEEDED
+            ):
+
+                rospy.logwarn(
+                    "[GUIDANCE] Breadcrumb route interrupted "
+                    "at point %d/%d with result %s.",
+                    index + 1,
+                    len(path),
+                    result.name,
+                )
+
+                return result
+
+        rospy.loginfo(
+            "[GUIDANCE] Breadcrumb route complete: %s",
+            description,
+        )
+
+        return MotionResult.SUCCEEDED
+
+
+
 
     # ============================================================
     # SPAR motion layer
@@ -1399,13 +1771,6 @@ class Guidance:
             0.0,
         ]
 
-        payload_waypoint = [
-            target_x,
-            target_y,
-            self.payload_height,
-            0.0,
-        ]
-
         payload_code = (
             self.TARGET_TO_PAYLOAD[
                 target_type
@@ -1430,7 +1795,7 @@ class Guidance:
         # 1. Fly horizontally above target
         # --------------------------------------------------------
 
-        result = self.fly_to(
+        result = self.navigate_to(
             approach_waypoint,
             "Fly above target at search height",
             allow_roi_interrupt=False,
@@ -1439,6 +1804,78 @@ class Guidance:
         if result != MotionResult.SUCCEEDED:
 
             return result
+
+        # --------------------------------------------------------
+        # Capture the actual safe Breadcrumb endpoint
+        #
+        # Breadcrumb may move the requested ROI if the nominal
+        # target lies inside an obstacle or outside the permitted
+        # navigation region. Use the actual reached X/Y for the
+        # subsequent vertical payload descent and climb.
+        # --------------------------------------------------------
+
+        safe_approach_position = (
+            self._get_current_position()
+        )
+
+        if safe_approach_position is None:
+
+            rospy.logerr(
+                "[GUIDANCE] Cannot determine safe ROI "
+                "approach position after Breadcrumb navigation."
+            )
+
+            return MotionResult.FAILED
+
+        safe_target_x = (
+            safe_approach_position[0]
+        )
+
+        safe_target_y = (
+            safe_approach_position[1]
+        )
+
+        approach_waypoint = [
+            safe_target_x,
+            safe_target_y,
+            self.flight_height,
+            0.0,
+        ]
+
+        payload_waypoint = [
+            safe_target_x,
+            safe_target_y,
+            self.payload_height,
+            0.0,
+        ]
+
+        target_offset = math.sqrt(
+            (
+                safe_target_x
+                - target_x
+            ) ** 2
+            +
+            (
+                safe_target_y
+                - target_y
+            ) ** 2
+        )
+
+        if (
+            target_offset
+            > self.position_tolerance
+        ):
+
+            rospy.logwarn(
+                "[GUIDANCE] ROI target adjusted for obstacle "
+                "avoidance: requested=(%.2f, %.2f), "
+                "safe=(%.2f, %.2f), difference=%.2f m.",
+                target_x,
+                target_y,
+                safe_target_x,
+                safe_target_y,
+                target_offset,
+            )
 
         result = self.interruptible_wait(
             self.approach_pause,
@@ -1553,7 +1990,7 @@ class Guidance:
         # 5. Return to interruption location
         # --------------------------------------------------------
 
-        result = self.fly_to(
+        result = self.navigate_to(
             return_waypoint,
             "Return to interrupted "
             "search position",
@@ -1698,7 +2135,15 @@ class Guidance:
                 search_waypoint[3],
             )
 
-            result = self.fly_to(
+            # ----------------------------------------------------
+            # Obstacle-aware search navigation
+            #
+            # Breadcrumb plans a safe route to the original
+            # lawnmower waypoint. Each returned path point is
+            # executed using the existing SPAR fly_to() layer.
+            # ----------------------------------------------------
+
+            result = self.navigate_to(
                 search_waypoint,
                 "Search waypoint {}/{}".format(
                     self.current_waypoint_index + 1,
@@ -1859,7 +2304,7 @@ class Guidance:
             "ArUco landing ROI."
         )
 
-        return self.fly_to(
+        return self.navigate_to(
             self.aruco_landing_roi,
             "Final approach to "
             "ArUco landing ROI",
@@ -1939,6 +2384,51 @@ class Guidance:
         rospy.loginfo(
             "[GUIDANCE] Waiting for SPAR "
             "flight server."
+        )
+
+        # --------------------------------------------------------
+        # Pre-flight Breadcrumb availability check
+        #
+        # Breadcrumb only advertises its request_path service
+        # after receiving a valid occupancy grid on /grid.
+        #
+        # Do not proceed toward autonomous flight until both the
+        # map and path planner are available.
+        # --------------------------------------------------------
+
+        rospy.loginfo(
+            "[GUIDANCE] Waiting for Breadcrumb "
+            "path planner: %s",
+            self.breadcrumb_service,
+        )
+
+        while not rospy.is_shutdown():
+
+            try:
+
+                rospy.wait_for_service(
+                    self.breadcrumb_service,
+                    timeout=self.breadcrumb_timeout,
+                )
+
+                break
+
+            except rospy.ROSException:
+
+                rospy.logwarn_throttle(
+                    5.0,
+                    "[GUIDANCE] Breadcrumb path planner "
+                    "not available. Waiting for /grid "
+                    "and %s.",
+                    self.breadcrumb_service,
+                )
+
+        if rospy.is_shutdown():
+
+            return
+
+        rospy.loginfo(
+            "[GUIDANCE] Breadcrumb path planner available."
         )
 
         rospy.loginfo(

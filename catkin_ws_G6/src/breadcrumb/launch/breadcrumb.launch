@@ -1,11 +1,104 @@
-<?xml version='1.0'?>
-<launch>
-	<node pkg="breadcrumb" type="breadcrumb_node" name="breadcrumb" clear_params="true" output="screen">
-		<param name="search_heuristic" value="1" type="int" />
-		<param name="allow_diagonals" value="true" type="bool" />
-		<param name="obstacle_threshold" value="1" type="int" />
-		<param name="calc_sparse_path" value="true" type="bool"/>
+<?xml version="1.0"?>
 
-		<remap from="~grid" to="/grid">
-	</node>
+<launch>
+
+    <!-- ===================================================== -->
+    <!-- Breadcrumb Obstacle-Aware Path Planner               -->
+    <!-- ===================================================== -->
+
+    <node
+        pkg="breadcrumb"
+        type="breadcrumb_node"
+        name="breadcrumb"
+        clear_params="true"
+        output="screen" >
+
+        
+        <!-- A* / Theta* Search Parameters                     -->
+
+        <param
+            name="search_heuristic"
+            value="1"
+            type="int"
+        />
+
+        <param
+            name="allow_diagonals"
+            value="true"
+            type="bool"
+        />
+
+        <param
+            name="any_angle"
+            value="true"
+            type="bool"
+        />
+
+        <param
+            name="obstacle_threshold"
+            value="1"
+            type="int"
+        />
+
+        <param
+            name="calc_sparse_path"
+            value="true"
+            type="bool"
+        />
+
+ 
+
+        <!-- Permitted Navigation Region                       -->
+
+        <param
+            name="enforce_bounds"
+            value="true"
+            type="bool"
+        />
+
+        <param
+            name="x_min"
+            value="-4.0"
+            type="double"
+        />
+
+        <param
+            name="x_max"
+            value="4.0"
+            type="double"
+        />
+
+        <param
+            name="y_min"
+            value="-3.2"
+            type="double"
+        />
+
+        <param
+            name="y_max"
+            value="2.0"
+            type="double"
+        />
+
+        <param
+            name="z_min"
+            value="0.5"
+            type="double"
+        />
+
+        <param
+            name="z_max"
+            value="4.0"
+            type="double"
+        />
+
+        <!-- Occupancy Grid Interface                          -->
+        
+        <remap
+            from="~grid"
+            to="/grid"
+        />
+
+    </node>
+
 </launch>

@@ -16,6 +16,7 @@ def send_flight_motion(spar_client):
 	goal = FlightMotionGoal()
 	goal.motion = FlightMotionGoal.MOTION_LAND
 	goal.velocity_vertical = rospy.get_param("~speed", 0.2)		# Other velocity information is ignored
+	# goal.velocity_vertical = 0.1
 	# No other information is used
 
 	# Send the goal

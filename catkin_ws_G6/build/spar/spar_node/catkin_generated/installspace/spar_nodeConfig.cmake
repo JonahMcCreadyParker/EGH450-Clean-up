@@ -187,7 +187,7 @@ foreach(t ${spar_node_EXPORTED_TARGETS})
   endif()
 endforeach()
 
-set(depends "")
+set(depends "actionlib;actionlib_msgs;breadcrumb;geometry_msgs;mavros_msgs;roscpp;rospy;sensor_msgs;spar_msgs;std_msgs")
 foreach(depend ${depends})
   string(REPLACE " " ";" depend_list ${depend})
   # the package name of the dependency must be kept in a unique variable so that it is not overwritten in recursive calls

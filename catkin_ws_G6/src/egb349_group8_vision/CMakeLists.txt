@@ -17,6 +17,6 @@ include_directories(
 )
 
 catkin_install_python(PROGRAMS
-  scripts/aruco_detector_node.py
+  scripts/aruco_detector.py
   DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
 )
