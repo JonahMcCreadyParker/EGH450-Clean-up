@@ -1,0 +1,124 @@
+<?xml version="1.0"?>
+
+<launch>
+
+    <!-- ===================================================== -->
+    <!-- UAS Emulator                                         -->
+    <!-- ===================================================== -->
+
+    <node
+        pkg="uavasr_emulator"
+        type="uavasr_emulator_node"
+        name="uavasr"
+        clear_params="true"
+        output="screen"
+    >
+
+        <param
+            name="frame_id"
+            value="map"
+            type="str"
+        />
+
+        <param
+            name="model_id"
+            value="emulated_uav"
+            type="str"
+        />
+
+        <!--
+            Emulator begins in the conditions that SPAR
+            normally waits for on the real aircraft.
+        -->
+        <param
+            name="start_armed"
+            value="true"
+            type="bool"
+        />
+
+        <param
+            name="start_mode_offboard"
+            value="true"
+            type="bool"
+        />
+
+        <param
+            name="update_rate_pose"
+            value="50.0"
+            type="double"
+        />
+
+        <param
+            name="update_rate_battery"
+            value="1.0"
+            type="double"
+        />
+
+        <param
+            name="update_rate_state"
+            value="1.0"
+            type="double"
+        />
+
+    </node>
+
+
+    <!-- ===================================================== -->
+    <!-- SPAR                                                  -->
+    <!-- ===================================================== -->
+
+    <remap
+        from="spar/mav_state"
+        to="uavasr/state"
+    />
+
+    <remap
+        from="spar/pose"
+        to="uavasr/pose"
+    />
+
+    <remap
+        from="spar/setpoint"
+        to="uavasr/setpoint_raw/local"
+    />
+
+    <include
+        file="$(find spar_node)/launch/spar.launch"
+    />
+
+
+    <!-- ===================================================== -->
+    <!-- Guidance                                              -->
+    <!-- ===================================================== -->
+
+    <node
+        name="guidance"
+        pkg="spar_node"
+        type="guidance"
+        respawn="false"
+        output="screen"
+    >
+
+        <rosparam
+            command="load"
+            file="$(find spar_node)/config/guidance.yaml"
+        />
+
+        <!--
+            Preserve the real-flight topic names inside
+            guidance.yaml and remap only for simulation.
+        -->
+
+        <remap
+            from="/mavros/local_position/pose"
+            to="/uavasr/pose"
+        />
+
+        <remap
+            from="/mavros/battery"
+            to="/uavasr/battery"
+        />
+
+    </node>
+
+</launch>
