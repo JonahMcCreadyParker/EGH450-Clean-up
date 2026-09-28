@@ -10,7 +10,7 @@
 flight:
   height: 2.4
 
-  horizontal_speed: 3.4
+  horizontal_speed: 0.4
   vertical_speed: 0.3
 
   takeoff_speed: 0.2

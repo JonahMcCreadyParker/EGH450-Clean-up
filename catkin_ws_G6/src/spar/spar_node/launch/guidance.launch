@@ -2,20 +2,29 @@
 
 <launch>
 
-    <!--
-        Central configuration file for the complete
-        autopilot / guidance mission.
-    -->
+    <!-- ========================================================= -->
+    <!-- Guidance Configuration                                    -->
+    <!-- ========================================================= -->
+
     <arg
         name="config_file"
         default="$(find spar_node)/config/guidance.yaml"
     />
 
-    <!--
-        Main guidance node.
-        All mission parameters are loaded into this
-        node's private ROS namespace.
-    -->
+
+    <!-- ========================================================= -->
+    <!-- Breadcrumb Obstacle-Aware Path Planner                    -->
+    <!-- ========================================================= -->
+
+    <include
+        file="$(find breadcrumb)/launch/breadcrumb.launch"
+    />
+
+
+    <!-- ========================================================= -->
+    <!-- Main Guidance / Autonomous Mission Node                   -->
+    <!-- ========================================================= -->
+
     <node
         name="guidance"
         pkg="spar_node"
