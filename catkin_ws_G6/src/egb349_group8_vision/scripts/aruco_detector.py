@@ -547,14 +547,14 @@ class ArucoDetector():
 
 
     def draw_world_axes(
-        self,
-        frame
-    ):
+            self,
+            frame
+        ):
 
         height, width = frame.shape[:2]
 
-        # Larger compass for 960x540
-        origin_x = width - 100
+        # Compass position for 960x540
+        origin_x = width - 110
         origin_y = 100
 
         radius = 72
@@ -590,7 +590,7 @@ class ArucoDetector():
             cv2.LINE_AA
         )
 
-        # +X top
+        # +X = top
         cv2.arrowedLine(
             frame,
             (origin_x, origin_y),
@@ -604,7 +604,7 @@ class ArucoDetector():
             tipLength=0.25
         )
 
-        # +Y left
+        # +Y = left
         cv2.arrowedLine(
             frame,
             (origin_x, origin_y),
@@ -619,15 +619,19 @@ class ArucoDetector():
         )
 
         font = cv2.FONT_HERSHEY_SIMPLEX
-        font_scale = 0.60
+        font_scale = 0.55
         thickness = 2
 
+        # Labels are placed outside the compass circle
+        # so they do not overlap the axes.
+
+        # +X
         cv2.putText(
             frame,
             "+X",
             (
-                origin_x - 16,
-                origin_y - axis_length - 10
+                origin_x - 17,
+                origin_y - radius - 8
             ),
             font,
             font_scale,
@@ -636,12 +640,13 @@ class ArucoDetector():
             cv2.LINE_AA
         )
 
+        # -X
         cv2.putText(
             frame,
             "-X",
             (
-                origin_x - 16,
-                origin_y + axis_length + 24
+                origin_x - 17,
+                origin_y + radius + 22
             ),
             font,
             font_scale,
@@ -650,11 +655,12 @@ class ArucoDetector():
             cv2.LINE_AA
         )
 
+        # +Y
         cv2.putText(
             frame,
             "+Y",
             (
-                origin_x - axis_length - 40,
+                origin_x - radius - 35,
                 origin_y + 7
             ),
             font,
@@ -664,11 +670,12 @@ class ArucoDetector():
             cv2.LINE_AA
         )
 
+        # -Y
         cv2.putText(
             frame,
             "-Y",
             (
-                origin_x + axis_length + 8,
+                origin_x + radius + 8,
                 origin_y + 7
             ),
             font,
@@ -678,6 +685,7 @@ class ArucoDetector():
             cv2.LINE_AA
         )
 
+        # Centre point
         cv2.circle(
             frame,
             (origin_x, origin_y),
