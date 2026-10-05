@@ -5,6 +5,10 @@ This repository contains the software developed for the QUT EGB349/EGH450 Search
 
 The system is designed to autonomously search an indoor area, detect and localise targets, display mission information to an operator, and trigger payload deployment mid-air when required.
 
+The SAR dataset collected can be found here:
+
+https://app.roboflow.com/egh455-vbb5h/sar-mission-ucsok/models
+
 ## System overview
 ### UAV Hardware
 - Holybro X500 V2 airframe
@@ -679,7 +683,8 @@ The current assessed flight configuration is:
 - Vertical speed: 0.4 m/s
 - Takeoff speed: 0.2 m/s
 - Landing speed: 0.2 m/s
-- Payload deployment height: 1.1 m
+- Payload Diversion Speed: 0.3 m/s
+- Payload deployment height: 1.1 m (0.5m above target - from base of UAS)
 - Battery warning: 20%
 - Automatic low battery landing: 10%
 - YOLO model: UAS_SAR_v26
