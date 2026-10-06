@@ -9,6 +9,12 @@ The SAR dataset collected can be found here:
 
 https://app.roboflow.com/egh455-vbb5h/sar-mission-ucsok/models
 
+## Operator Interface User Guide for Mission
+
+A detailed HTML user guide is available for the **Pi 400 Ground Control Station and Pi 4B ROS Master**, including the demo sequence, RViz/rqt setup, navigation, payload testing, shutdown procedure, and troubleshooting.
+
+**[Open the UAS_SAR_G8 Operator Interface User Guide](UAS_SAR_G8_Operator_Interface_User_Guide.html)**
+
 ## System overview
 ### UAV Hardware
 - Holybro X500 V2 airframe
