@@ -172,13 +172,13 @@
 
         <param
             name="x_min"
-            value="-4.0"
+            value="-3.8"
             type="double"
         />
 
         <param
             name="x_max"
-            value="4.0"
+            value="3.7"
             type="double"
         />
 
@@ -190,7 +190,7 @@
 
         <param
             name="y_max"
-            value="2.1"
+            value="2.0"
             type="double"
         />
 

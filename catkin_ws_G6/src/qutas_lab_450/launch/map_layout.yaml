@@ -18,5 +18,5 @@ obstacles:
     type: "circle"
     size: 5
     position:
-      x: 10
+      x: 8
       y: 60

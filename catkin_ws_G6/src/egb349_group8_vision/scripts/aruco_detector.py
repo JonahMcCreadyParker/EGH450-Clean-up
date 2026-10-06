@@ -44,7 +44,7 @@ class ArucoDetector():
     ])
     # ArUco
     ARUCO_DICT = cv2.aruco.DICT_5X5_100
-    MARKER_LENGTH = 0.200
+    MARKER_LENGTH = 0.180
     LANDING_FRAMES_REQUIRED = 2
     # HUD
     SHOW_CROSSHAIR = True
