@@ -324,7 +324,7 @@ This file contains:
 The guidance node is started through:
 
 ```text
-catkin_ws_G6/launch/control.launch
+catkin_ws_G6/launch/guidance.launch
 ```
 
 The mission follows this general sequence:
@@ -701,6 +701,7 @@ catkin_ws_G6/src/depthai_publisher/launch/dai_yolo_publisher.launch
 
 The settings should be checked before each assessed flight.
 
+The i
 
 
 
