@@ -76,7 +76,7 @@
 
         <param
             name="y_max"
-            value="2.0"
+            value="2.1"
             type="double"
         />
 

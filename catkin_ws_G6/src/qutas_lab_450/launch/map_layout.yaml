@@ -12,11 +12,11 @@ obstacles:
     type: "square"
     size: 3
     position:
-      x: 50
-      y: 20
+      x: 70
+      y: 10
   obs_1:
     type: "circle"
     size: 5
     position:
       x: 10
-      y: 45
+      y: 60

@@ -324,7 +324,7 @@ This file contains:
 The guidance node is started through:
 
 ```text
-catkin_ws_G6/launch/control.launch
+catkin_ws_G6/src/spar/spar_node/launch/guidance.launch
 ```
 
 The mission follows this general sequence:
@@ -350,6 +350,18 @@ The SPAR flight server becomes available after:
 - OFFBOARD mode is selected
 
 Once these conditions are met, the autonomous mission begins.
+
+For any extra information regarding AUT-specfic mission logic information, refer to:
+
+```text
+catkin_ws_G6/src/spar/spar_node/EGH450_AUT_Architecture_Handover.md
+```
+
+and/or:
+
+```text
+catkin_ws_G6/src/spar/spar_node/EGH450_AUT_Architecture_Handover.pdf
+```
 
 ## Search Pattern
 The search pattern is stored inside:
