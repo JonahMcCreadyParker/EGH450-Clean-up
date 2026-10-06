@@ -13,7 +13,7 @@ https://app.roboflow.com/egh455-vbb5h/sar-mission-ucsok/models
 
 A detailed HTML user guide is available for the **Pi 400 Ground Control Station and Pi 4B ROS Master**, including the demo sequence, RViz/rqt setup, navigation, payload testing, shutdown procedure, and troubleshooting.
 
-**[Download the UAS_SAR_G8 Operator Interface User Guide here:](UAS_SAR_G8_Operator_Interface_User_Guide.html)**
+**[Download the UAS_SAR_G8 Operator Interface User Guide here](UAS_SAR_G8_Operator_Interface_User_Guide.html)**
 
 ## System overview
 ### UAV Hardware
