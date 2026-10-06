@@ -680,7 +680,7 @@ Contains the supplied A* path planning system used with the occupancy grid.
 The current assessed flight configuration is:
 - Flight Height: Adjustable
 - Horizontal speed: 0.4 m/s
-- Vertical speed: 0.4 m/s
+- Vertical speed: 0.3 m/s
 - Takeoff speed: 0.2 m/s
 - Landing speed: 0.2 m/s
 - Payload Diversion Speed: 0.3 m/s
@@ -700,9 +700,4 @@ catkin_ws_G6/src/depthai_publisher/launch/dai_yolo_publisher.launch
 ```
 
 The settings should be checked before each assessed flight.
-
-The i
-
-
-
 
