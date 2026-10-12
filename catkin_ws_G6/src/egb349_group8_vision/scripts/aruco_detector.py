@@ -638,7 +638,7 @@ class ArucoDetector():
             yellow,
             -1
         )
-
+    # RViz Aruco Detection Log
     def update_detection_log(
         self,
         marker_id,
@@ -660,7 +660,8 @@ class ArucoDetector():
             "distance": distance
         }
         log_lines = [
-            "Seen ArUco markers:"
+            "ARUCO DETECTIONS:",
+            ""
         ]
         for saved_id in sorted(
             self.detected_marker_log.keys()
@@ -683,7 +684,7 @@ class ArucoDetector():
                     marker["distance"]
                 )
             )
-        log_text = "n".join(
+        log_text = "\n".join(
             log_lines
         )
         self.pose_log_pub.publish(
@@ -699,8 +700,8 @@ class ArucoDetector():
         )
         marker_msg.action = Marker.ADD
         marker_msg.pose.position.x = 0.0
-        marker_msg.pose.position.y = -0.8
-        marker_msg.pose.position.z = 1.5
+        marker_msg.pose.position.y = 2.0
+        marker_msg.pose.position.z = 3.0
         marker_msg.pose.orientation.w = 1.0
         marker_msg.scale.z = 0.12
         marker_msg.color.r = 0.0
