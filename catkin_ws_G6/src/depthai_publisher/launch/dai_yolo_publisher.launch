@@ -20,9 +20,9 @@
             value="/home/uavteam6/EGB349_Project_eldrone/models/UAS_SAR_v26_RVC2/UAS_SAR_v26_RVC2.json"
         />
 
-        <param name="confidence" value="0.80" />
+        <param name="confidence" value="0.85" />
         <param name="iou" value="0.50" />
-        <param name="camera_fps" value="15.0" />
+        <param name="camera_fps" value="20.0" />
         <param name="jpeg_quality" value="100" />
 
         <param

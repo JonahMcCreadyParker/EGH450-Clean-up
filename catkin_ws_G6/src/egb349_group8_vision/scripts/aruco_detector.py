@@ -44,8 +44,8 @@ class ArucoDetector():
     ])
     # ArUco
     ARUCO_DICT = cv2.aruco.DICT_5X5_100
-    MARKER_LENGTH = 0.180
-    LANDING_FRAMES_REQUIRED = 2
+    MARKER_LENGTH = 0.185
+    LANDING_FRAMES_REQUIRED = 1
     # HUD
     SHOW_CROSSHAIR = True
     SHOW_DISTANCE_TEXT = True
@@ -100,25 +100,29 @@ class ArucoDetector():
             self.aruco_params = (
                 cv2.aruco.DetectorParameters()
             )
+        
         # Slightly loosened detection settings. These remain close to
         # OpenCV defaults to avoid making false detections too likely.
         self.aruco_params.adaptiveThreshWinSizeMin = 3
         self.aruco_params.adaptiveThreshWinSizeMax = 35
         self.aruco_params.adaptiveThreshWinSizeStep = 4
         self.aruco_params.adaptiveThreshConstant = 7
-        self.aruco_params.minMarkerPerimeterRate = 0.018
-        self.aruco_params.polygonalApproxAccuracyRate = 0.045
-        self.aruco_params.minCornerDistanceRate = 0.035
+        self.aruco_params.minMarkerPerimeterRate = 0.02
+        self.aruco_params.polygonalApproxAccuracyRate = 0.038
+        self.aruco_params.minCornerDistanceRate = 0.04
         self.aruco_params.minMarkerDistanceRate = 0.04
         self.aruco_params.minDistanceToBorder = 3
-        # self.aruco_params.cornerRefinementMethod = (
-        #     cv2.aruco.CORNER_REFINE_SUBPIX
-        # )
+
+        self.aruco_params.cornerRefinementMethod = (
+            cv2.aruco.CORNER_REFINE_SUBPIX
+        )
         self.aruco_params.cornerRefinementWinSize = 5
         self.aruco_params.cornerRefinementMaxIterations = 30
         self.aruco_params.cornerRefinementMinAccuracy = 0.05
+
         # OpenCV default is 0.60.
-        self.aruco_params.errorCorrectionRate = 0.67
+        self.aruco_params.errorCorrectionRate = 0.62
+
         # Camera calibration
         self.camera_info_sub = rospy.Subscriber(
             self.CAMERA_INFO_TOPIC,
