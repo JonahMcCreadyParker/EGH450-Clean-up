@@ -106,19 +106,19 @@ class ArucoDetector():
         self.aruco_params.adaptiveThreshWinSizeMax = 35
         self.aruco_params.adaptiveThreshWinSizeStep = 4
         self.aruco_params.adaptiveThreshConstant = 7
-        self.aruco_params.minMarkerPerimeterRate = 0.02
-        self.aruco_params.polygonalApproxAccuracyRate = 0.04
-        self.aruco_params.minCornerDistanceRate = 0.04
+        self.aruco_params.minMarkerPerimeterRate = 0.018
+        self.aruco_params.polygonalApproxAccuracyRate = 0.045
+        self.aruco_params.minCornerDistanceRate = 0.035
         self.aruco_params.minMarkerDistanceRate = 0.04
         self.aruco_params.minDistanceToBorder = 3
-        self.aruco_params.cornerRefinementMethod = (
-            cv2.aruco.CORNER_REFINE_SUBPIX
-        )
+        # self.aruco_params.cornerRefinementMethod = (
+        #     cv2.aruco.CORNER_REFINE_SUBPIX
+        # )
         self.aruco_params.cornerRefinementWinSize = 5
         self.aruco_params.cornerRefinementMaxIterations = 30
         self.aruco_params.cornerRefinementMinAccuracy = 0.05
         # OpenCV default is 0.60.
-        self.aruco_params.errorCorrectionRate = 0.65
+        self.aruco_params.errorCorrectionRate = 0.67
         # Camera calibration
         self.camera_info_sub = rospy.Subscriber(
             self.CAMERA_INFO_TOPIC,

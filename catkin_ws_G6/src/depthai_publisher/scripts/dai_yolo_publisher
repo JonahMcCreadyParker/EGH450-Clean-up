@@ -37,9 +37,9 @@ class YoloDetector():
     SENSOR_HEIGHT = 1080
     # Detection filtering
     FILTER_WINDOW = 5
-    FRAMES_REQUIRED = 1
+    FRAMES_REQUIRED = 2
     # ROI publication filtering
-    ROI_FRAMES_REQUIRED = 2
+    ROI_FRAMES_REQUIRED = 3
     # Hard-coded ROI fallback
     PERSON_FALLBACK_ROI = [-1.0, 1.0, 2.0]
     BACKPACK_FALLBACK_ROI = [1.0, 1.0, 2.0]

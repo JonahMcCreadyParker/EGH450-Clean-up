@@ -3,11 +3,8 @@
 import rospy
 from std_msgs.msg import String
 from gpiozero import AngularServo
-
 # from gpiozero.pins.pigpio import PiGPIOFactory
 # factory = PiGPIOFactory()
-
-
 
 
 try:
@@ -17,17 +14,17 @@ except ImportError:
     HAVE_MAVROS = False
 
 NEUTRAL_ANGLE = 40     
-DEPLOY_ANGLE = -40
+DEPLOY_ANGLE = -50
 
 
 RETURN_DELAY = 2.0  # seconds before auto-returning to neutral after a deploy
 
-# M1 = Tracker ('T') on GPIO12, M2 = EpiPen ('E') on GPIO13
+
 MOTORS = {
-    # 'T': AngularServo(12, min_pulse_width=0.0005, max_pulse_width=0.0025, pin_factory=factory),
-    # 'E': AngularServo(13, min_pulse_width=0.0005, max_pulse_width=0.0025, pin_factory=factory),
-    'T': AngularServo(12, min_pulse_width=0.0005, max_pulse_width=0.0025),
-    'E': AngularServo(13, min_pulse_width=0.0005, max_pulse_width=0.0025),
+    'T': AngularServo(12, initial_angle=NEUTRAL_ANGLE,
+                      min_pulse_width=0.0005, max_pulse_width=0.0025),
+    'E': AngularServo(13, initial_angle=NEUTRAL_ANGLE,
+                      min_pulse_width=0.0005, max_pulse_width=0.0025),
 }
 
 #nothing has been published yet 
